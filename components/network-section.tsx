@@ -1,0 +1,128 @@
+"use client"
+
+import { useState } from "react"
+import { cn } from "@/lib/utils"
+import type { NetworkData, TimePeriod } from "@/lib/dashboard-data"
+import { formatFullNumber, formatNumber } from "@/lib/dashboard-data"
+import { StatCard } from "@/components/stat-card"
+import { RequestChart } from "@/components/request-chart"
+import { EndpointCard } from "@/components/endpoint-card"
+import { PeriodSelector } from "@/components/period-selector"
+import { Activity, Server, Zap, BarChart3, TrendingUp, Gauge, ArrowUpRight, Clock } from "lucide-react"
+
+type EndpointType = "rpc" | "wss" | "validatorApi"
+
+interface NetworkSectionProps {
+  title: string
+  subtitle: string
+  data: NetworkData
+  network: "mainnet" | "testnet"
+}
+
+const endpointTabs: { value: EndpointType; label: string; icon: React.ReactNode }[] = [
+  { value: "rpc", label: "RPC", icon: <Server className="size-3.5" /> },
+  { value: "wss", label: "WSS", icon: <Zap className="size-3.5" /> },
+  { value: "validatorApi", label: "Validator API", icon: <Activity className="size-3.5" /> },
+]
+
+const periodLabels: Record<TimePeriod, string> = {
+  daily: "Last 24 Hours",
+  weekly: "Last 7 Days",
+  monthly: "Last 30 Days",
+  total: "All Time",
+}
+
+export function NetworkSection({ title, subtitle, data, network }: NetworkSectionProps) {
+  const [activeEndpoint, setActiveEndpoint] = useState<EndpointType>("rpc")
+  const [period, setPeriod] = useState<TimePeriod>("daily")
+
+  const endpointData = data[activeEndpoint]
+  const stats = endpointData.stats[period]
+  const chartData = endpointData.chart[period]
+
+  return (
+    <section className="flex flex-col gap-5">
+      {/* Section Header */}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2.5">
+            <div
+              className={cn(
+                "size-2 rounded-full",
+                network === "mainnet" ? "bg-green-400 shadow-sm shadow-green-400/50" : "bg-amber-400 shadow-sm shadow-amber-400/50"
+              )}
+            />
+            <h2 className="text-xl font-bold text-foreground lg:text-2xl">{title}</h2>
+          </div>
+          <p className="text-xs text-muted-foreground pl-[18px]">{subtitle}</p>
+        </div>
+        <PeriodSelector selected={period} onSelect={setPeriod} />
+      </div>
+
+      {/* Endpoint Tabs */}
+      <div className="flex items-center gap-0.5 rounded-lg border border-border/50 bg-secondary/50 p-0.5 w-fit">
+        {endpointTabs.map((tab) => (
+          <button
+            key={tab.value}
+            onClick={() => setActiveEndpoint(tab.value)}
+            className={cn(
+              "flex items-center gap-1.5 rounded-md px-3.5 py-2 text-xs font-medium transition-all",
+              activeEndpoint === tab.value
+                ? "bg-card text-foreground border border-border/50 shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {tab.icon}
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Endpoint URL */}
+      <EndpointCard
+        label={
+          activeEndpoint === "rpc"
+            ? "RPC Endpoint"
+            : activeEndpoint === "wss"
+            ? "WebSocket Endpoint"
+            : "Validator API Endpoint"
+        }
+        endpoint={endpointData.endpoint}
+        type={activeEndpoint === "wss" ? "wss" : activeEndpoint === "rpc" ? "rpc" : "api"}
+      />
+
+      {/* Summary Stats */}
+      <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-5 lg:gap-3">
+        <StatCard
+          label="Total Requests"
+          value={formatFullNumber(stats.totalRequests)}
+          icon={<BarChart3 className="size-3" />}
+        />
+        <StatCard
+          label="Avg Req/Sec"
+          value={formatNumber(stats.avgReqPerSec)}
+          icon={<TrendingUp className="size-3" />}
+        />
+        <StatCard
+          label="Current Req/Sec"
+          value={formatNumber(stats.currentReqPerSec)}
+          icon={<Gauge className="size-3" />}
+        />
+        <StatCard
+          label="Peak Req/Sec"
+          value={formatNumber(stats.peakReqPerSec)}
+          icon={<ArrowUpRight className="size-3" />}
+        />
+        <StatCard
+          label="Uptime"
+          value={stats.uptime}
+          icon={<Clock className="size-3" />}
+          className="col-span-2 lg:col-span-1"
+        />
+      </div>
+
+      {/* Chart */}
+      <RequestChart data={chartData} periodLabel={periodLabels[period]} />
+    </section>
+  )
+}
