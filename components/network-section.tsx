@@ -2,27 +2,19 @@
 
 import { useState } from "react"
 import { cn } from "@/lib/utils"
-import type { NetworkData, TimePeriod } from "@/lib/dashboard-data"
-import { formatFullNumber, formatNumber } from "@/lib/dashboard-data"
+import type { Network, ServiceType, TimePeriod } from "@/lib/dashboard-data"
+import { ENDPOINTS, formatFullNumber, formatNumber } from "@/lib/dashboard-data"
+import { useMetricsStats, useMetricsChart } from "@/lib/use-metrics"
 import { StatCard } from "@/components/stat-card"
 import { RequestChart } from "@/components/request-chart"
 import { EndpointCard } from "@/components/endpoint-card"
 import { PeriodSelector } from "@/components/period-selector"
-import { Activity, Server, Zap, BarChart3, TrendingUp, Gauge, ArrowUpRight, Clock } from "lucide-react"
+import { Activity, Server, Zap, BarChart3, TrendingUp, Gauge, ArrowUpRight, Clock, Loader2 } from "lucide-react"
 
-type EndpointType = "rpc" | "wss" | "validatorApi"
-
-interface NetworkSectionProps {
-  title: string
-  subtitle: string
-  data: NetworkData
-  network: "mainnet" | "testnet"
-}
-
-const endpointTabs: { value: EndpointType; label: string; icon: React.ReactNode }[] = [
+const endpointTabs: { value: ServiceType; label: string; icon: React.ReactNode }[] = [
   { value: "rpc", label: "RPC", icon: <Server className="size-3.5" /> },
   { value: "wss", label: "WSS", icon: <Zap className="size-3.5" /> },
-  { value: "validatorApi", label: "Validator API", icon: <Activity className="size-3.5" /> },
+  { value: "validator_api", label: "Validator API", icon: <Activity className="size-3.5" /> },
 ]
 
 const periodLabels: Record<TimePeriod, string> = {
@@ -32,13 +24,22 @@ const periodLabels: Record<TimePeriod, string> = {
   total: "All Time",
 }
 
-export function NetworkSection({ title, subtitle, data, network }: NetworkSectionProps) {
-  const [activeEndpoint, setActiveEndpoint] = useState<EndpointType>("rpc")
+interface NetworkSectionProps {
+  title: string
+  subtitle: string
+  network: Network
+}
+
+export function NetworkSection({ title, subtitle, network }: NetworkSectionProps) {
+  const [activeEndpoint, setActiveEndpoint] = useState<ServiceType>("rpc")
   const [period, setPeriod] = useState<TimePeriod>("daily")
 
-  const endpointData = data[activeEndpoint]
-  const stats = endpointData.stats[period]
-  const chartData = endpointData.chart[period]
+  const { stats, isLoading: statsLoading, error: statsError } = useMetricsStats(network, activeEndpoint, period)
+  const { chartData, isLoading: chartLoading, error: chartError } = useMetricsChart(network, activeEndpoint, period)
+
+  const endpoint = ENDPOINTS[network][activeEndpoint]
+  const isError = statsError || chartError
+  const isLoading = statsLoading || chartLoading
 
   return (
     <section className="flex flex-col gap-5">
@@ -87,42 +88,53 @@ export function NetworkSection({ title, subtitle, data, network }: NetworkSectio
             ? "WebSocket Endpoint"
             : "Validator API Endpoint"
         }
-        endpoint={endpointData.endpoint}
+        endpoint={endpoint}
         type={activeEndpoint === "wss" ? "wss" : activeEndpoint === "rpc" ? "rpc" : "api"}
       />
+
+      {/* Error State */}
+      {isError && (
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-sm text-amber-400">
+          Metrics sunucusuna baglanilamiyor. Veriler yukleniyor...
+        </div>
+      )}
 
       {/* Summary Stats */}
       <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-5 lg:gap-3">
         <StatCard
           label="Total Requests"
-          value={formatFullNumber(stats.totalRequests)}
-          icon={<BarChart3 className="size-3" />}
+          value={statsLoading ? "..." : formatFullNumber(stats?.totalRequests ?? 0)}
+          icon={statsLoading ? <Loader2 className="size-3 animate-spin" /> : <BarChart3 className="size-3" />}
         />
         <StatCard
           label="Avg Req/Sec"
-          value={formatNumber(stats.avgReqPerSec)}
+          value={statsLoading ? "..." : formatNumber(stats?.avgReqPerSec ?? 0)}
           icon={<TrendingUp className="size-3" />}
         />
         <StatCard
           label="Current Req/Sec"
-          value={formatNumber(stats.currentReqPerSec)}
+          value={statsLoading ? "..." : formatNumber(stats?.currentReqPerSec ?? 0)}
           icon={<Gauge className="size-3" />}
         />
         <StatCard
           label="Peak Req/Sec"
-          value={formatNumber(stats.peakReqPerSec)}
+          value={statsLoading ? "..." : formatNumber(stats?.peakReqPerSec ?? 0)}
           icon={<ArrowUpRight className="size-3" />}
         />
         <StatCard
           label="Uptime"
-          value={stats.uptime}
+          value={statsLoading ? "..." : (stats?.uptime ?? "—")}
           icon={<Clock className="size-3" />}
           className="col-span-2 lg:col-span-1"
         />
       </div>
 
       {/* Chart */}
-      <RequestChart data={chartData} periodLabel={periodLabels[period]} />
+      <RequestChart
+        data={chartData ?? []}
+        periodLabel={periodLabels[period]}
+        isLoading={chartLoading}
+      />
     </section>
   )
 }

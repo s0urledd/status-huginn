@@ -2,7 +2,6 @@
 
 import { useState } from "react"
 import { cn } from "@/lib/utils"
-import { mainnetData, testnetData } from "@/lib/dashboard-data"
 import { DashboardHeader } from "@/components/dashboard-header"
 import { NetworkSection } from "@/components/network-section"
 
@@ -76,14 +75,12 @@ export default function DashboardPage() {
             <NetworkSection
               title="Mainnet RPC & WSS"
               subtitle="Mainnet JSON-RPC, WebSocket, and Validator endpoints"
-              data={mainnetData}
               network="mainnet"
             />
           ) : (
             <NetworkSection
               title="Testnet RPC & WSS"
               subtitle="Testnet JSON-RPC, WebSocket, and Validator endpoints"
-              data={testnetData}
               network="testnet"
             />
           )}
