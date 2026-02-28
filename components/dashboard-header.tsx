@@ -1,23 +1,24 @@
 "use client"
 
-import { Activity, Github } from "lucide-react"
+import { Github } from "lucide-react"
 
 export function DashboardHeader() {
   return (
     <header className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3.5 lg:px-8">
         <div className="flex items-center gap-3">
-          <div className="relative flex size-9 items-center justify-center rounded-lg bg-primary">
-            <Activity className="size-4 text-primary-foreground" />
-            <div className="absolute -inset-0.5 rounded-lg bg-primary/30 blur-sm -z-10" />
-          </div>
+          <img
+            src="https://huginn.tech/logos/huginn-logo.png"
+            alt="Huginn"
+            className="size-9 rounded-lg"
+          />
           <div className="flex items-center gap-2">
             <span className="text-base font-bold text-foreground tracking-tight">
               Huginn
             </span>
-            <span className="hidden text-muted-foreground sm:inline">/</span>
+            <span className="hidden text-muted-foreground sm:inline">|</span>
             <span className="hidden text-sm text-muted-foreground sm:inline">
-              Node Status
+              Monad Validator Node Infrastructure
             </span>
           </div>
         </div>

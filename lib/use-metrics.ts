@@ -14,7 +14,7 @@ export function useMetricsStats(
   const { data, error, isLoading } = useSWR<EndpointStats>(
     `/api/metrics?network=${network}&service=${service}&period=${period}&type=stats`,
     fetcher,
-    { refreshInterval: 30_000, dedupingInterval: 10_000 }
+    { refreshInterval: 1_800_000, dedupingInterval: 60_000 }
   )
 
   return { stats: data, error, isLoading }
@@ -28,7 +28,7 @@ export function useMetricsChart(
   const { data, error, isLoading } = useSWR<{ data: ChartDataPoint[] }>(
     `/api/metrics?network=${network}&service=${service}&period=${period}&type=chart`,
     fetcher,
-    { refreshInterval: 60_000, dedupingInterval: 10_000 }
+    { refreshInterval: 1_800_000, dedupingInterval: 60_000 }
   )
 
   return { chartData: data?.data, error, isLoading }

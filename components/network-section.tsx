@@ -14,7 +14,7 @@ import { Activity, Server, Zap, BarChart3, TrendingUp, Gauge, ArrowUpRight, Cloc
 const endpointTabs: { value: ServiceType; label: string; icon: React.ReactNode }[] = [
   { value: "rpc", label: "RPC", icon: <Server className="size-3.5" /> },
   { value: "wss", label: "WSS", icon: <Zap className="size-3.5" /> },
-  { value: "validator_api", label: "Validator API", icon: <Activity className="size-3.5" /> },
+  { value: "validator_api", label: "Staking API", icon: <Activity className="size-3.5" /> },
 ]
 
 const periodLabels: Record<TimePeriod, string> = {
@@ -50,7 +50,7 @@ export function NetworkSection({ title, subtitle, network }: NetworkSectionProps
             <div
               className={cn(
                 "size-2 rounded-full",
-                network === "mainnet" ? "bg-green-400 shadow-sm shadow-green-400/50" : "bg-amber-400 shadow-sm shadow-amber-400/50"
+                network === "mainnet" ? "bg-green-400 shadow-sm shadow-green-400/50" : "bg-green-400 shadow-sm shadow-green-400/50"
               )}
             />
             <h2 className="text-xl font-bold text-foreground lg:text-2xl">{title}</h2>
@@ -86,7 +86,7 @@ export function NetworkSection({ title, subtitle, network }: NetworkSectionProps
             ? "RPC Endpoint"
             : activeEndpoint === "wss"
             ? "WebSocket Endpoint"
-            : "Validator API Endpoint"
+            : "Staking API Endpoint"
         }
         endpoint={endpoint}
         type={activeEndpoint === "wss" ? "wss" : activeEndpoint === "rpc" ? "rpc" : "api"}

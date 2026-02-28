@@ -22,7 +22,7 @@ export default function DashboardPage() {
               Monad Node Infrastructure
             </h1>
             <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground lg:text-[15px]">
-              High-performance RPC, WebSocket, and Staking Validator API endpoints for the Monad network.
+              High-performance RPC, WebSocket, and Staking API endpoints for the Monad network.
               Powered by Huginn infrastructure with 99.9%+ uptime.
             </p>
           </div>
@@ -44,7 +44,7 @@ export default function DashboardPage() {
                   activeNetwork === "mainnet" ? "bg-primary-foreground" : "bg-green-400"
                 )}
               />
-              Mainnet
+              Mainnet Status
             </button>
             <button
               onClick={() => setActiveNetwork("testnet")}
@@ -58,10 +58,10 @@ export default function DashboardPage() {
               <div
                 className={cn(
                   "size-1.5 rounded-full",
-                  activeNetwork === "testnet" ? "bg-primary-foreground" : "bg-amber-400"
+                  activeNetwork === "testnet" ? "bg-primary-foreground" : "bg-green-400"
                 )}
               />
-              Testnet
+              Testnet Status
             </button>
           </div>
         </div>
@@ -74,13 +74,13 @@ export default function DashboardPage() {
           {activeNetwork === "mainnet" ? (
             <NetworkSection
               title="Mainnet RPC & WSS"
-              subtitle="Mainnet JSON-RPC, WebSocket, and Validator endpoints"
+              subtitle="Mainnet JSON-RPC, WebSocket, and Staking endpoints"
               network="mainnet"
             />
           ) : (
             <NetworkSection
               title="Testnet RPC & WSS"
-              subtitle="Testnet JSON-RPC, WebSocket, and Validator endpoints"
+              subtitle="Testnet JSON-RPC, WebSocket, and Staking endpoints"
               network="testnet"
             />
           )}
@@ -89,27 +89,10 @@ export default function DashboardPage() {
 
       {/* Footer */}
       <footer className="mt-16 border-t border-border/50">
-        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 px-4 py-5 lg:flex-row lg:px-8">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span className="font-semibold text-foreground">Huginn</span>
-            <span className="text-border">|</span>
-            <span>Monad Validator Node Infrastructure</span>
-          </div>
-          <div className="flex items-center gap-4">
-            <a
-              href="https://status-monad-huginn.tech"
-              className="text-xs text-muted-foreground transition-colors hover:text-primary"
-            >
-              Mainnet Status
-            </a>
-            <span className="text-border/50 text-xs">|</span>
-            <a
-              href="https://status-monad-testnet-huginn.tech"
-              className="text-xs text-muted-foreground transition-colors hover:text-primary"
-            >
-              Testnet Status
-            </a>
-          </div>
+        <div className="mx-auto flex max-w-7xl items-center justify-center px-4 py-5 lg:px-8">
+          <span className="text-xs text-muted-foreground">
+            Powered by <span className="font-semibold text-foreground">Huginn Tech</span>
+          </span>
         </div>
       </footer>
     </div>
