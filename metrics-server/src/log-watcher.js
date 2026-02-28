@@ -6,11 +6,12 @@ const { insertRequests } = require("./db");
 const SERVICE_MAP = {
   // Mainnet
   "monad-rpc.huginn.tech": "rpc",
-  "monad-wss.huginn.tech": "wss",
+  "wss.monad-rpc.huginn.tech": "wss",
   "validator-api.huginn.tech": "validator_api",
+  "validators-api.huginn.tech": "validator_api",
   // Testnet
   "monad-testnet-rpc.huginn.tech": "rpc",
-  "monad-testnet-wss.huginn.tech": "wss",
+  "wss.monad-testnet-rpc.huginn.tech": "wss",
   "validator-api-testnet.huginn.tech": "validator_api",
 };
 
