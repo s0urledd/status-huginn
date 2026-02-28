@@ -18,13 +18,13 @@ export interface ChartDataPoint {
 export const ENDPOINTS: Record<Network, Record<ServiceType, string>> = {
   mainnet: {
     rpc: "https://monad-rpc.huginn.tech",
-    wss: "wss://monad-wss.huginn.tech",
-    validator_api: "https://validator-api.huginn.tech/monad-api",
+    wss: "wss://wss.monad-rpc.huginn.tech",
+    validator_api: "https://validator-api.huginn.tech",
   },
   testnet: {
     rpc: "https://monad-testnet-rpc.huginn.tech",
-    wss: "wss://monad-testnet-wss.huginn.tech",
-    validator_api: "https://validator-api-testnet.huginn.tech/monad-api",
+    wss: "wss://wss.monad-testnet-rpc.huginn.tech",
+    validator_api: "https://validator-api-testnet.huginn.tech",
   },
 }
 
