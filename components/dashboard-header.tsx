@@ -12,15 +12,9 @@ export function DashboardHeader() {
             alt="Huginn"
             className="size-9 rounded-lg"
           />
-          <div className="flex items-center gap-2">
-            <span className="text-base font-bold text-foreground tracking-tight">
-              Huginn
-            </span>
-            <span className="hidden text-muted-foreground sm:inline">|</span>
-            <span className="hidden text-sm text-muted-foreground sm:inline">
-              Monad Validator Node Infrastructure
-            </span>
-          </div>
+          <span className="text-base font-bold text-foreground tracking-tight">
+            Huginn
+          </span>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5 rounded-full border border-green-500/20 bg-green-500/5 px-3 py-1.5">
@@ -30,7 +24,7 @@ export function DashboardHeader() {
             <span className="text-xs font-medium text-green-400">Operational</span>
           </div>
           <a
-            href="https://github.com/huginn"
+            href="https://github.com/Huginn-tech"
             target="_blank"
             rel="noopener noreferrer"
             className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
