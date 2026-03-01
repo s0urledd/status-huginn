@@ -4,7 +4,7 @@ const { getStats, getChartData, aggregateHourly, getTotalRequests } = require(".
 const { LogWatcher, importLogFile } = require("./log-watcher");
 
 const PORT = parseInt(process.env.PORT || "3100", 10);
-const LOG_PATH = process.env.NGINX_LOG_PATH || "/var/log/nginx/access.log";
+const LOG_PATH = process.env.NGINX_LOG_PATH || "/var/log/nginx/huginn_metrics.log";
 const API_KEY = process.env.API_KEY || "";
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "*").split(",");
 
