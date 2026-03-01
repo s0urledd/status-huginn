@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
 
     const response = await fetch(url, {
       headers,
-      next: { revalidate: 30 }, // cache for 30 seconds
+      cache: "no-store", // always fetch fresh data, SWR handles client-side polling
     })
 
     if (!response.ok) {
@@ -43,7 +43,11 @@ export async function GET(request: NextRequest) {
     }
 
     const data = await response.json()
-    return NextResponse.json(data)
+    return NextResponse.json(data, {
+      headers: {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+      },
+    })
   } catch (error) {
     console.error(`[Metrics API] Error fetching from ${network}:`, error)
     return NextResponse.json(
