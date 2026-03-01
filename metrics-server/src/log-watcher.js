@@ -6,12 +6,14 @@ const { insertRequests } = require("./db");
 const SERVICE_MAP = {
   // Mainnet
   "monad-rpc.huginn.tech": "rpc",
-  "wss.monad-rpc.huginn.tech": "wss",
+  "monad-wss.huginn.tech": "wss",
+  "wss.monad-rpc.huginn.tech": "wss",       // alias
   "validator-api.huginn.tech": "validator_api",
   "validators-api.huginn.tech": "validator_api",
   // Testnet
   "monad-testnet-rpc.huginn.tech": "rpc",
-  "wss.monad-testnet-rpc.huginn.tech": "wss",
+  "monad-testnet-wss.huginn.tech": "wss",
+  "wss.monad-testnet-rpc.huginn.tech": "wss", // alias
   "validator-api-testnet.huginn.tech": "validator_api",
 };
 
@@ -168,16 +170,24 @@ async function importLogFile(logPath) {
     const batch = [];
     let count = 0;
 
+    const serviceCounts = {};
+    let skipped = 0;
+    let totalLines = 0;
+
     rl.on("line", (line) => {
+      totalLines++;
       const parsed = parseLogLine(line);
       if (parsed) {
         batch.push(parsed);
         count++;
+        serviceCounts[parsed.service] = (serviceCounts[parsed.service] || 0) + 1;
 
         // Flush in batches of 10000
         if (batch.length >= 10000) {
           insertRequests(batch.splice(0));
         }
+      } else if (line.trim()) {
+        skipped++;
       }
     });
 
@@ -185,7 +195,10 @@ async function importLogFile(logPath) {
       if (batch.length > 0) {
         insertRequests(batch);
       }
-      console.log(`[Import] Imported ${count} records from ${logPath}`);
+      console.log(`[Import] Total lines: ${totalLines}, Imported: ${count}, Skipped: ${skipped}`);
+      for (const [svc, cnt] of Object.entries(serviceCounts)) {
+        console.log(`[Import]   ${svc}: ${cnt} records`);
+      }
       resolve(count);
     });
 
