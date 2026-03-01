@@ -19,7 +19,7 @@ export default function DashboardPage() {
         <div className="mb-10 flex flex-col gap-6">
           <div className="flex flex-col gap-3">
             <h1 className="text-3xl font-bold text-foreground lg:text-[2.5rem] lg:leading-tight text-balance tracking-tight">
-              Monad Node Infrastructure
+              Monad Infrastructure
             </h1>
             <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground lg:text-[15px]">
               High-performance RPC, WebSocket, and Staking API endpoints for the Monad network.
