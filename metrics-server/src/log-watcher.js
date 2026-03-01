@@ -44,19 +44,15 @@ function parseNginxTime(timeStr) {
     Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11,
   };
   const parts = timeStr.match(
-    /(\d+)\/(\w+)\/(\d+):(\d+):(\d+):(\d+)\s+([+-]\d+)/
+    /(\d+)\/(\w+)\/(\d+):(\d+):(\d+):(\d+)\s+([+-])(\d{2})(\d{2})/
   );
   if (!parts) return Math.floor(Date.now() / 1000);
 
-  const [, day, mon, year, hour, min, sec] = parts;
-  const date = new Date(
-    parseInt(year),
-    months[mon],
-    parseInt(day),
-    parseInt(hour),
-    parseInt(min),
-    parseInt(sec)
-  );
+  const [, day, mon, year, hour, min, sec, tzSign, tzHours, tzMinutes] = parts;
+  // Build UTC date string and parse properly with timezone offset
+  const monthNum = String(months[mon] + 1).padStart(2, "0");
+  const isoStr = `${year}-${monthNum}-${day.padStart(2, "0")}T${hour.padStart(2, "0")}:${min.padStart(2, "0")}:${sec.padStart(2, "0")}${tzSign}${tzHours}:${tzMinutes}`;
+  const date = new Date(isoStr);
   return Math.floor(date.getTime() / 1000);
 }
 
