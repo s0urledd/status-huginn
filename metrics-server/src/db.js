@@ -68,9 +68,9 @@ function aggregateHourly() {
   const now = Math.floor(Date.now() / 1000);
   const oneHourAgo = now - 3600;
 
-  // Aggregate completed hours
+  // Aggregate completed hours - ADD to existing counts, don't replace
   d.exec(`
-    INSERT OR REPLACE INTO hourly_stats (service, hour_ts, request_count, error_count, avg_response_time)
+    INSERT INTO hourly_stats (service, hour_ts, request_count, error_count, avg_response_time)
     SELECT
       service,
       (timestamp / 3600) * 3600 AS hour_ts,
@@ -81,9 +81,10 @@ function aggregateHourly() {
     WHERE timestamp < ${oneHourAgo}
     GROUP BY service, hour_ts
     ON CONFLICT(service, hour_ts) DO UPDATE SET
-      request_count = excluded.request_count,
-      error_count = excluded.error_count,
-      avg_response_time = excluded.avg_response_time;
+      request_count = hourly_stats.request_count + excluded.request_count,
+      error_count = hourly_stats.error_count + excluded.error_count,
+      avg_response_time = (hourly_stats.avg_response_time * hourly_stats.request_count + excluded.avg_response_time * excluded.request_count)
+        / (hourly_stats.request_count + excluded.request_count);
   `);
 
   // Delete aggregated raw logs (keep last hour for current stats)
@@ -136,11 +137,11 @@ function getStats(service, periodSeconds) {
     totalErrors,
     avgReqPerSec:
       periodSeconds > 0
-        ? Math.round(totalRequests / periodSeconds)
+        ? parseFloat((totalRequests / periodSeconds).toFixed(2))
         : 0,
-    currentReqPerSec: Math.round((lastMinute?.cnt || 0) / 60),
+    currentReqPerSec: parseFloat(((lastMinute?.cnt || 0) / 60).toFixed(2)),
     peakReqPerSec: peakHour?.peak
-      ? Math.round(peakHour.peak / 3600)
+      ? parseFloat((peakHour.peak / 3600).toFixed(2))
       : 0,
     uptime: calculateUptime(d, service, since, now),
   };
@@ -150,13 +151,19 @@ function getStats(service, periodSeconds) {
 function getChartData(service, periodSeconds, points) {
   const d = getDb();
   const now = Math.floor(Date.now() / 1000);
-  const since = now - periodSeconds;
+  // Align to hour boundary so buckets match hourly_stats hour_ts values
+  const nowAligned = Math.floor(now / 3600) * 3600 + 3600;
   const bucketSize = Math.floor(periodSeconds / points);
+  // Align bucket size to hour multiples for daily view
+  const alignedBucketSize = periodSeconds <= 86400
+    ? 3600
+    : Math.max(3600, Math.floor(bucketSize / 3600) * 3600);
+  const since = nowAligned - alignedBucketSize * points;
 
   const result = [];
   for (let i = 0; i < points; i++) {
-    const bucketStart = since + i * bucketSize;
-    const bucketEnd = bucketStart + bucketSize;
+    const bucketStart = since + i * alignedBucketSize;
+    const bucketEnd = bucketStart + alignedBucketSize;
 
     const data = d
       .prepare(
@@ -165,14 +172,14 @@ function getChartData(service, periodSeconds, points) {
       )
       .get(service, bucketStart, bucketEnd);
 
-    // Also include recent raw data if bucket is in the last hour
+    // Also include recent raw data if bucket overlaps with the last hour
     let recentTotal = 0;
     if (bucketEnd > now - 3600) {
       const recent = d
         .prepare(
           `SELECT COUNT(*) as cnt FROM request_log WHERE service = ? AND timestamp >= ? AND timestamp < ?`
         )
-        .get(service, Math.max(bucketStart, now - 3600), bucketEnd);
+        .get(service, Math.max(bucketStart, now - 3600), Math.min(bucketEnd, now + 1));
       recentTotal = recent?.cnt || 0;
     }
 
