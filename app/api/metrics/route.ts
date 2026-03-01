@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server"
 // Metrics server URLs - set these in your .env.local
 const METRICS_SERVERS: Record<string, string> = {
   mainnet: process.env.MAINNET_METRICS_URL || "http://localhost:3100",
-  testnet: process.env.TESTNET_METRICS_URL || "http://localhost:3101",
+  testnet: process.env.TESTNET_METRICS_URL || "http://localhost:3100",
 }
 
 const API_KEY = process.env.METRICS_API_KEY || ""

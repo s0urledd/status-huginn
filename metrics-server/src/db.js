@@ -132,17 +132,19 @@ function getStats(service, periodSeconds) {
     )
     .get(service, since);
 
+  // Use enough decimal places so low-traffic values don't round to 0
+  const formatRate = (val) => {
+    if (val === 0) return 0;
+    if (val < 0.01) return parseFloat(val.toFixed(4));
+    return parseFloat(val.toFixed(2));
+  };
+
   return {
     totalRequests,
     totalErrors,
-    avgReqPerSec:
-      periodSeconds > 0
-        ? parseFloat((totalRequests / periodSeconds).toFixed(2))
-        : 0,
-    currentReqPerSec: parseFloat(((lastMinute?.cnt || 0) / 60).toFixed(2)),
-    peakReqPerSec: peakHour?.peak
-      ? parseFloat((peakHour.peak / 3600).toFixed(2))
-      : 0,
+    avgReqPerSec: periodSeconds > 0 ? formatRate(totalRequests / periodSeconds) : 0,
+    currentReqPerSec: formatRate((lastMinute?.cnt || 0) / 60),
+    peakReqPerSec: peakHour?.peak ? formatRate(peakHour.peak / 3600) : 0,
     uptime: calculateUptime(d, service, since, now),
   };
 }
@@ -207,11 +209,10 @@ function calculateUptime(d, service, since, now) {
 function formatBucketTime(ts, periodSeconds) {
   const date = new Date(ts * 1000);
   if (periodSeconds <= 86400) {
-    return date.toLocaleTimeString("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
+    // Use UTC so bucket labels match hour boundaries regardless of server TZ
+    const h = String(date.getUTCHours()).padStart(2, "0");
+    const m = String(date.getUTCMinutes()).padStart(2, "0");
+    return `${h}:${m}`;
   }
   if (periodSeconds <= 604800) {
     return date.toLocaleDateString("en-US", { weekday: "short" });
