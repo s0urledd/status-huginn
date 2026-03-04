@@ -125,12 +125,23 @@ function getStats(service, periodSeconds) {
     )
     .get(service, now - 60);
 
-  // Peak req/sec from hourly data
+  // Peak req/sec from hourly data (average over each hour)
   const peakHour = d
     .prepare(
       `SELECT MAX(request_count) as peak FROM hourly_stats WHERE service = ? AND hour_ts >= ?`
     )
     .get(service, since);
+
+  // Peak req/sec from recent raw data (per-minute granularity, last hour)
+  const peakMinute = d
+    .prepare(
+      `SELECT MAX(cnt) as peak FROM (
+        SELECT COUNT(*) as cnt FROM request_log
+        WHERE service = ? AND timestamp >= ?
+        GROUP BY timestamp / 60
+      )`
+    )
+    .get(service, now - 3600);
 
   // Use enough decimal places so low-traffic values don't round to 0
   const formatRate = (val) => {
@@ -139,12 +150,18 @@ function getStats(service, periodSeconds) {
     return parseFloat(val.toFixed(2));
   };
 
+  const currentReqPerSec = formatRate((lastMinute?.cnt || 0) / 60);
+  const hourlyPeak = peakHour?.peak ? peakHour.peak / 3600 : 0;
+  const minutePeak = peakMinute?.peak ? peakMinute.peak / 60 : 0;
+  // Peak is the max of: hourly historical peak, per-minute recent peak, and current rate
+  const peakReqPerSec = formatRate(Math.max(hourlyPeak, minutePeak, currentReqPerSec));
+
   return {
     totalRequests,
     totalErrors,
     avgReqPerSec: periodSeconds > 0 ? formatRate(totalRequests / periodSeconds) : 0,
-    currentReqPerSec: formatRate((lastMinute?.cnt || 0) / 60),
-    peakReqPerSec: peakHour?.peak ? formatRate(peakHour.peak / 3600) : 0,
+    currentReqPerSec,
+    peakReqPerSec,
     uptime: calculateUptime(d, service, since, now),
   };
 }
