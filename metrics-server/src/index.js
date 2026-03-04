@@ -50,10 +50,17 @@ const CHART_POINTS = {
 };
 
 const VALID_SERVICES = ["rpc", "wss", "validator_api"];
+const VALID_NETWORKS = ["mainnet", "testnet"];
 
-// GET /api/stats?service=rpc&period=daily
+// GET /api/stats?network=mainnet&service=rpc&period=daily
 app.get("/api/stats", (req, res) => {
-  const { service, period = "daily" } = req.query;
+  const { network = "mainnet", service, period = "daily" } = req.query;
+
+  if (!VALID_NETWORKS.includes(network)) {
+    return res.status(400).json({
+      error: "Invalid network. Must be one of: " + VALID_NETWORKS.join(", "),
+    });
+  }
 
   if (!service || !VALID_SERVICES.includes(service)) {
     return res.status(400).json({
@@ -68,17 +75,23 @@ app.get("/api/stats", (req, res) => {
   }
 
   try {
-    const stats = getStats(service, PERIOD_MAP[period]);
-    res.json({ service, period, ...stats });
+    const stats = getStats(network, service, PERIOD_MAP[period]);
+    res.json({ network, service, period, ...stats });
   } catch (err) {
     console.error("[API] Stats error:", err.message);
     res.status(500).json({ error: "Internal server error" });
   }
 });
 
-// GET /api/chart?service=rpc&period=daily
+// GET /api/chart?network=mainnet&service=rpc&period=daily
 app.get("/api/chart", (req, res) => {
-  const { service, period = "daily" } = req.query;
+  const { network = "mainnet", service, period = "daily" } = req.query;
+
+  if (!VALID_NETWORKS.includes(network)) {
+    return res.status(400).json({
+      error: "Invalid network. Must be one of: " + VALID_NETWORKS.join(", "),
+    });
+  }
 
   if (!service || !VALID_SERVICES.includes(service)) {
     return res.status(400).json({
@@ -93,17 +106,21 @@ app.get("/api/chart", (req, res) => {
   }
 
   try {
-    const data = getChartData(service, PERIOD_MAP[period], CHART_POINTS[period]);
-    res.json({ service, period, data });
+    const data = getChartData(network, service, PERIOD_MAP[period], CHART_POINTS[period]);
+    res.json({ network, service, period, data });
   } catch (err) {
     console.error("[API] Chart error:", err.message);
     res.status(500).json({ error: "Internal server error" });
   }
 });
 
-// GET /api/overview - all services summary
+// GET /api/overview?network=mainnet&period=daily - all services summary
 app.get("/api/overview", (req, res) => {
-  const { period = "daily" } = req.query;
+  const { network = "mainnet", period = "daily" } = req.query;
+
+  if (!VALID_NETWORKS.includes(network)) {
+    return res.status(400).json({ error: "Invalid network" });
+  }
 
   if (!PERIOD_MAP[period]) {
     return res.status(400).json({ error: "Invalid period" });
@@ -113,11 +130,11 @@ app.get("/api/overview", (req, res) => {
     const overview = {};
     for (const service of VALID_SERVICES) {
       overview[service] = {
-        stats: getStats(service, PERIOD_MAP[period]),
-        totalAllTime: getTotalRequests(service),
+        stats: getStats(network, service, PERIOD_MAP[period]),
+        totalAllTime: getTotalRequests(network, service),
       };
     }
-    res.json({ period, services: overview });
+    res.json({ network, period, services: overview });
   } catch (err) {
     console.error("[API] Overview error:", err.message);
     res.status(500).json({ error: "Internal server error" });

@@ -26,11 +26,11 @@ export async function GET(request: NextRequest) {
 
     let url: string
     if (type === "overview") {
-      url = `${metricsUrl}/api/overview?period=${period}`
+      url = `${metricsUrl}/api/overview?network=${network}&period=${period}`
     } else if (type === "chart") {
-      url = `${metricsUrl}/api/chart?service=${service}&period=${period}`
+      url = `${metricsUrl}/api/chart?network=${network}&service=${service}&period=${period}`
     } else {
-      url = `${metricsUrl}/api/stats?service=${service}&period=${period}`
+      url = `${metricsUrl}/api/stats?network=${network}&service=${service}&period=${period}`
     }
 
     const response = await fetch(url, {
