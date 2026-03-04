@@ -19,6 +19,7 @@ function initTables() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS request_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      network TEXT NOT NULL DEFAULT 'mainnet',  -- 'mainnet' or 'testnet'
       service TEXT NOT NULL,        -- 'rpc', 'wss', 'validator_api'
       timestamp INTEGER NOT NULL,   -- unix timestamp
       status INTEGER,
@@ -27,36 +28,39 @@ function initTables() {
 
     CREATE TABLE IF NOT EXISTS hourly_stats (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      network TEXT NOT NULL DEFAULT 'mainnet',
       service TEXT NOT NULL,
       hour_ts INTEGER NOT NULL,     -- unix timestamp rounded to hour
       request_count INTEGER DEFAULT 0,
       error_count INTEGER DEFAULT 0,
       avg_response_time REAL DEFAULT 0,
-      UNIQUE(service, hour_ts)
+      UNIQUE(network, service, hour_ts)
     );
 
     CREATE INDEX IF NOT EXISTS idx_request_log_ts ON request_log(timestamp);
     CREATE INDEX IF NOT EXISTS idx_request_log_service ON request_log(service);
+    CREATE INDEX IF NOT EXISTS idx_request_log_network ON request_log(network);
     CREATE INDEX IF NOT EXISTS idx_hourly_stats_service_ts ON hourly_stats(service, hour_ts);
+    CREATE INDEX IF NOT EXISTS idx_hourly_stats_network ON hourly_stats(network);
   `);
 }
 
 // Insert a single request record
-function insertRequest(service, timestamp, status, responseTime) {
+function insertRequest(network, service, timestamp, status, responseTime) {
   const stmt = getDb().prepare(
-    "INSERT INTO request_log (service, timestamp, status, response_time) VALUES (?, ?, ?, ?)"
+    "INSERT INTO request_log (network, service, timestamp, status, response_time) VALUES (?, ?, ?, ?, ?)"
   );
-  stmt.run(service, timestamp, status, responseTime);
+  stmt.run(network, service, timestamp, status, responseTime);
 }
 
 // Batch insert requests (for log parsing)
 function insertRequests(requests) {
   const stmt = getDb().prepare(
-    "INSERT INTO request_log (service, timestamp, status, response_time) VALUES (?, ?, ?, ?)"
+    "INSERT INTO request_log (network, service, timestamp, status, response_time) VALUES (?, ?, ?, ?, ?)"
   );
   const insertMany = getDb().transaction((rows) => {
     for (const row of rows) {
-      stmt.run(row.service, row.timestamp, row.status, row.responseTime);
+      stmt.run(row.network, row.service, row.timestamp, row.status, row.responseTime);
     }
   });
   insertMany(requests);
@@ -70,8 +74,9 @@ function aggregateHourly() {
 
   // Aggregate completed hours - ADD to existing counts, don't replace
   d.exec(`
-    INSERT INTO hourly_stats (service, hour_ts, request_count, error_count, avg_response_time)
+    INSERT INTO hourly_stats (network, service, hour_ts, request_count, error_count, avg_response_time)
     SELECT
+      network,
       service,
       (timestamp / 3600) * 3600 AS hour_ts,
       COUNT(*) AS request_count,
@@ -79,8 +84,8 @@ function aggregateHourly() {
       AVG(response_time) AS avg_response_time
     FROM request_log
     WHERE timestamp < ${oneHourAgo}
-    GROUP BY service, hour_ts
-    ON CONFLICT(service, hour_ts) DO UPDATE SET
+    GROUP BY network, service, hour_ts
+    ON CONFLICT(network, service, hour_ts) DO UPDATE SET
       request_count = hourly_stats.request_count + excluded.request_count,
       error_count = hourly_stats.error_count + excluded.error_count,
       avg_response_time = (hourly_stats.avg_response_time * hourly_stats.request_count + excluded.avg_response_time * excluded.request_count)
@@ -92,7 +97,7 @@ function aggregateHourly() {
 }
 
 // Get stats for a specific period
-function getStats(service, periodSeconds) {
+function getStats(network, service, periodSeconds) {
   const d = getDb();
   const now = Math.floor(Date.now() / 1000);
   const since = now - periodSeconds;
@@ -101,17 +106,17 @@ function getStats(service, periodSeconds) {
   const hourlyData = d
     .prepare(
       `SELECT SUM(request_count) as total, SUM(error_count) as errors, AVG(avg_response_time) as avg_rt
-       FROM hourly_stats WHERE service = ? AND hour_ts >= ?`
+       FROM hourly_stats WHERE network = ? AND service = ? AND hour_ts >= ?`
     )
-    .get(service, since);
+    .get(network, service, since);
 
   // Recent raw data (last hour, not yet aggregated)
   const recentData = d
     .prepare(
       `SELECT COUNT(*) as total, SUM(CASE WHEN status >= 500 THEN 1 ELSE 0 END) as errors, AVG(response_time) as avg_rt
-       FROM request_log WHERE service = ? AND timestamp >= ?`
+       FROM request_log WHERE network = ? AND service = ? AND timestamp >= ?`
     )
-    .get(service, since);
+    .get(network, service, since);
 
   const totalRequests =
     (hourlyData?.total || 0) + (recentData?.total || 0);
@@ -121,27 +126,27 @@ function getStats(service, periodSeconds) {
   // Current req/sec (last 60 seconds)
   const lastMinute = d
     .prepare(
-      "SELECT COUNT(*) as cnt FROM request_log WHERE service = ? AND timestamp >= ?"
+      "SELECT COUNT(*) as cnt FROM request_log WHERE network = ? AND service = ? AND timestamp >= ?"
     )
-    .get(service, now - 60);
+    .get(network, service, now - 60);
 
   // Peak req/sec from hourly data (average over each hour)
   const peakHour = d
     .prepare(
-      `SELECT MAX(request_count) as peak FROM hourly_stats WHERE service = ? AND hour_ts >= ?`
+      `SELECT MAX(request_count) as peak FROM hourly_stats WHERE network = ? AND service = ? AND hour_ts >= ?`
     )
-    .get(service, since);
+    .get(network, service, since);
 
   // Peak req/sec from recent raw data (per-minute granularity, last hour)
   const peakMinute = d
     .prepare(
       `SELECT MAX(cnt) as peak FROM (
         SELECT COUNT(*) as cnt FROM request_log
-        WHERE service = ? AND timestamp >= ?
+        WHERE network = ? AND service = ? AND timestamp >= ?
         GROUP BY timestamp / 60
       )`
     )
-    .get(service, now - 3600);
+    .get(network, service, now - 3600);
 
   // Use enough decimal places so low-traffic values don't round to 0
   const formatRate = (val) => {
@@ -162,12 +167,12 @@ function getStats(service, periodSeconds) {
     avgReqPerSec: periodSeconds > 0 ? formatRate(totalRequests / periodSeconds) : 0,
     currentReqPerSec,
     peakReqPerSec,
-    uptime: calculateUptime(d, service, since, now),
+    uptime: calculateUptime(d, network, service, since, now),
   };
 }
 
 // Get chart data points
-function getChartData(service, periodSeconds, points) {
+function getChartData(network, service, periodSeconds, points) {
   const d = getDb();
   const now = Math.floor(Date.now() / 1000);
   // Align to hour boundary so buckets match hourly_stats hour_ts values
@@ -187,18 +192,18 @@ function getChartData(service, periodSeconds, points) {
     const data = d
       .prepare(
         `SELECT COALESCE(SUM(request_count), 0) as total
-         FROM hourly_stats WHERE service = ? AND hour_ts >= ? AND hour_ts < ?`
+         FROM hourly_stats WHERE network = ? AND service = ? AND hour_ts >= ? AND hour_ts < ?`
       )
-      .get(service, bucketStart, bucketEnd);
+      .get(network, service, bucketStart, bucketEnd);
 
     // Also include recent raw data if bucket overlaps with the last hour
     let recentTotal = 0;
     if (bucketEnd > now - 3600) {
       const recent = d
         .prepare(
-          `SELECT COUNT(*) as cnt FROM request_log WHERE service = ? AND timestamp >= ? AND timestamp < ?`
+          `SELECT COUNT(*) as cnt FROM request_log WHERE network = ? AND service = ? AND timestamp >= ? AND timestamp < ?`
         )
-        .get(service, Math.max(bucketStart, now - 3600), Math.min(bucketEnd, now + 1));
+        .get(network, service, Math.max(bucketStart, now - 3600), Math.min(bucketEnd, now + 1));
       recentTotal = recent?.cnt || 0;
     }
 
@@ -211,14 +216,14 @@ function getChartData(service, periodSeconds, points) {
   return result;
 }
 
-function calculateUptime(d, service, since, now) {
+function calculateUptime(d, network, service, since, now) {
   const totalHours = Math.max(1, Math.floor((now - since) / 3600));
   const downHours = d
     .prepare(
       `SELECT COUNT(*) as cnt FROM hourly_stats
-       WHERE service = ? AND hour_ts >= ? AND request_count = 0`
+       WHERE network = ? AND service = ? AND hour_ts >= ? AND request_count = 0`
     )
-    .get(service, since);
+    .get(network, service, since);
   const up = totalHours - (downHours?.cnt || 0);
   return ((up / totalHours) * 100).toFixed(2) + "%";
 }
@@ -241,14 +246,14 @@ function formatBucketTime(ts, periodSeconds) {
 }
 
 // Get total request count for a service (all time)
-function getTotalRequests(service) {
+function getTotalRequests(network, service) {
   const d = getDb();
   const hourly = d
-    .prepare("SELECT COALESCE(SUM(request_count), 0) as total FROM hourly_stats WHERE service = ?")
-    .get(service);
+    .prepare("SELECT COALESCE(SUM(request_count), 0) as total FROM hourly_stats WHERE network = ? AND service = ?")
+    .get(network, service);
   const recent = d
-    .prepare("SELECT COUNT(*) as total FROM request_log WHERE service = ?")
-    .get(service);
+    .prepare("SELECT COUNT(*) as total FROM request_log WHERE network = ? AND service = ?")
+    .get(network, service);
   return (hourly?.total || 0) + (recent?.total || 0);
 }
 

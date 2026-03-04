@@ -2,19 +2,19 @@ const fs = require("fs");
 const readline = require("readline");
 const { insertRequests } = require("./db");
 
-// Maps nginx server_name / domain to service type
+// Maps nginx server_name / domain to { service, network }
 const SERVICE_MAP = {
   // Mainnet
-  "monad-rpc.huginn.tech": "rpc",
-  "monad-wss.huginn.tech": "wss",
-  "wss.monad-rpc.huginn.tech": "wss",       // alias
-  "validator-api.huginn.tech": "validator_api",
-  "validators-api.huginn.tech": "validator_api",
+  "monad-rpc.huginn.tech":          { service: "rpc",           network: "mainnet" },
+  "monad-wss.huginn.tech":          { service: "wss",           network: "mainnet" },
+  "wss.monad-rpc.huginn.tech":      { service: "wss",           network: "mainnet" },
+  "validator-api.huginn.tech":      { service: "validator_api",  network: "mainnet" },
+  "validators-api.huginn.tech":     { service: "validator_api",  network: "mainnet" },
   // Testnet
-  "monad-testnet-rpc.huginn.tech": "rpc",
-  "monad-testnet-wss.huginn.tech": "wss",
-  "wss.monad-testnet-rpc.huginn.tech": "wss", // alias
-  "validator-api-testnet.huginn.tech": "validator_api",
+  "monad-testnet-rpc.huginn.tech":      { service: "rpc",           network: "testnet" },
+  "monad-testnet-wss.huginn.tech":      { service: "wss",           network: "testnet" },
+  "wss.monad-testnet-rpc.huginn.tech":  { service: "wss",           network: "testnet" },
+  "validator-api-testnet.huginn.tech":  { service: "validator_api",  network: "testnet" },
 };
 
 // Parse nginx log line with custom format:
@@ -27,12 +27,13 @@ function parseLogLine(line) {
   if (!match) return null;
 
   const [, host, timeStr, statusStr, rtStr] = match;
-  const service = SERVICE_MAP[host];
-  if (!service) return null;
+  const mapping = SERVICE_MAP[host];
+  if (!mapping) return null;
 
   const timestamp = parseNginxTime(timeStr);
   return {
-    service,
+    network: mapping.network,
+    service: mapping.service,
     timestamp,
     status: parseInt(statusStr, 10),
     responseTime: parseFloat(rtStr),
@@ -170,7 +171,7 @@ async function importLogFile(logPath) {
     const batch = [];
     let count = 0;
 
-    const serviceCounts = {};
+    const networkCounts = {};
     let skipped = 0;
     let totalLines = 0;
 
@@ -180,7 +181,8 @@ async function importLogFile(logPath) {
       if (parsed) {
         batch.push(parsed);
         count++;
-        serviceCounts[parsed.service] = (serviceCounts[parsed.service] || 0) + 1;
+        const key = `${parsed.network}/${parsed.service}`;
+        networkCounts[key] = (networkCounts[key] || 0) + 1;
 
         // Flush in batches of 10000
         if (batch.length >= 10000) {
@@ -196,8 +198,8 @@ async function importLogFile(logPath) {
         insertRequests(batch);
       }
       console.log(`[Import] Total lines: ${totalLines}, Imported: ${count}, Skipped: ${skipped}`);
-      for (const [svc, cnt] of Object.entries(serviceCounts)) {
-        console.log(`[Import]   ${svc}: ${cnt} records`);
+      for (const [key, cnt] of Object.entries(networkCounts).sort()) {
+        console.log(`[Import]   ${key}: ${cnt} records`);
       }
       resolve(count);
     });
