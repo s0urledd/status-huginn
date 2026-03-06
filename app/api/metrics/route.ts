@@ -33,10 +33,15 @@ export async function GET(request: NextRequest) {
       url = `${metricsUrl}/api/stats?network=${network}&service=${service}&period=${period}`
     }
 
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 10000) // 10s timeout
+
     const response = await fetch(url, {
       headers,
       cache: "no-store", // always fetch fresh data, SWR handles client-side polling
+      signal: controller.signal,
     })
+    clearTimeout(timeout)
 
     if (!response.ok) {
       throw new Error(`Metrics server responded with ${response.status}`)
