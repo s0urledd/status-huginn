@@ -34,6 +34,7 @@ function initTables() {
       request_count INTEGER DEFAULT 0,
       error_count INTEGER DEFAULT 0,
       avg_response_time REAL DEFAULT 0,
+      peak_rps REAL DEFAULT 0,      -- peak req/sec observed during this hour (per-minute granularity)
       UNIQUE(network, service, hour_ts)
     );
 
@@ -42,6 +43,21 @@ function initTables() {
     CREATE INDEX IF NOT EXISTS idx_request_log_network ON request_log(network);
     CREATE INDEX IF NOT EXISTS idx_hourly_stats_service_ts ON hourly_stats(service, hour_ts);
     CREATE INDEX IF NOT EXISTS idx_hourly_stats_network ON hourly_stats(network);
+  `);
+
+  // Migration: add peak_rps column if missing (existing DBs)
+  try {
+    db.exec(`ALTER TABLE hourly_stats ADD COLUMN peak_rps REAL DEFAULT 0`);
+    console.log("[DB] Migrated: added peak_rps column to hourly_stats");
+  } catch {
+    // Column already exists, ignore
+  }
+
+  // Back-fill peak_rps from request_count for existing rows that have 0 peak
+  // Use request_count/3600 as a lower-bound estimate
+  db.exec(`
+    UPDATE hourly_stats SET peak_rps = request_count / 3600.0
+    WHERE peak_rps = 0 AND request_count > 0
   `);
 }
 
@@ -72,28 +88,64 @@ function aggregateHourly() {
   const now = Math.floor(Date.now() / 1000);
   const oneHourAgo = now - 3600;
 
-  // Aggregate completed hours - ADD to existing counts, don't replace
-  d.exec(`
-    INSERT INTO hourly_stats (network, service, hour_ts, request_count, error_count, avg_response_time)
-    SELECT
-      network,
-      service,
-      (timestamp / 3600) * 3600 AS hour_ts,
-      COUNT(*) AS request_count,
-      SUM(CASE WHEN status >= 500 THEN 1 ELSE 0 END) AS error_count,
-      AVG(response_time) AS avg_response_time
-    FROM request_log
-    WHERE timestamp < ${oneHourAgo}
-    GROUP BY network, service, hour_ts
-    ON CONFLICT(network, service, hour_ts) DO UPDATE SET
-      request_count = hourly_stats.request_count + excluded.request_count,
-      error_count = hourly_stats.error_count + excluded.error_count,
-      avg_response_time = (hourly_stats.avg_response_time * hourly_stats.request_count + excluded.avg_response_time * excluded.request_count)
-        / (hourly_stats.request_count + excluded.request_count);
-  `);
+  // Run entire aggregation in a transaction to prevent data loss on crash
+  const runAggregation = d.transaction(() => {
+    // Step 1: Calculate per-minute peak for each network/service/hour being aggregated
+    const peakRows = d.prepare(`
+      SELECT network, service, (timestamp / 3600) * 3600 AS hour_ts,
+             MAX(cnt) as peak_count
+      FROM (
+        SELECT network, service, timestamp,
+               COUNT(*) as cnt
+        FROM request_log
+        WHERE timestamp < ?
+        GROUP BY network, service, timestamp / 60
+      )
+      GROUP BY network, service, hour_ts
+    `).all(oneHourAgo);
 
-  // Delete aggregated raw logs (keep last hour for current stats)
-  d.prepare("DELETE FROM request_log WHERE timestamp < ?").run(oneHourAgo);
+    // Build peak lookup map
+    const peakMap = new Map();
+    for (const row of peakRows) {
+      peakMap.set(`${row.network}|${row.service}|${row.hour_ts}`, row.peak_count / 60);
+    }
+
+    // Step 2: Aggregate completed hours into hourly_stats
+    d.prepare(`
+      INSERT INTO hourly_stats (network, service, hour_ts, request_count, error_count, avg_response_time, peak_rps)
+      SELECT
+        network,
+        service,
+        (timestamp / 3600) * 3600 AS hour_ts,
+        COUNT(*) AS request_count,
+        SUM(CASE WHEN status >= 500 THEN 1 ELSE 0 END) AS error_count,
+        AVG(response_time) AS avg_response_time,
+        0 AS peak_rps
+      FROM request_log
+      WHERE timestamp < ?
+      GROUP BY network, service, hour_ts
+      ON CONFLICT(network, service, hour_ts) DO UPDATE SET
+        request_count = hourly_stats.request_count + excluded.request_count,
+        error_count = hourly_stats.error_count + excluded.error_count,
+        avg_response_time = (hourly_stats.avg_response_time * hourly_stats.request_count + excluded.avg_response_time * excluded.request_count)
+          / (hourly_stats.request_count + excluded.request_count)
+    `).run(oneHourAgo);
+
+    // Step 3: Update peak_rps (keep the higher value between existing and new)
+    const updatePeak = d.prepare(`
+      UPDATE hourly_stats SET peak_rps = MAX(COALESCE(peak_rps, 0), ?)
+      WHERE network = ? AND service = ? AND hour_ts = ?
+    `);
+    for (const row of peakRows) {
+      const peakRps = row.peak_count / 60;
+      updatePeak.run(peakRps, row.network, row.service, row.hour_ts);
+    }
+
+    // Step 4: Delete aggregated raw logs (keep last hour for current stats)
+    d.prepare("DELETE FROM request_log WHERE timestamp < ?").run(oneHourAgo);
+  });
+
+  runAggregation();
 }
 
 // Get stats for a specific period
@@ -130,14 +182,15 @@ function getStats(network, service, periodSeconds) {
     )
     .get(network, service, now - 60);
 
-  // Peak req/sec from hourly data (average over each hour)
+  // Peak req/sec from hourly data - use stored peak_rps (per-minute granularity)
   const peakHour = d
     .prepare(
-      `SELECT MAX(request_count) as peak FROM hourly_stats WHERE network = ? AND service = ? AND hour_ts >= ?`
+      `SELECT MAX(peak_rps) as peak FROM hourly_stats WHERE network = ? AND service = ? AND hour_ts >= ?`
     )
     .get(network, service, since);
 
-  // Peak req/sec from recent raw data (per-minute granularity, last hour)
+  // Peak req/sec from recent raw data (per-minute granularity, covers data not yet aggregated)
+  const recentSince = Math.max(since, now - 3600);
   const peakMinute = d
     .prepare(
       `SELECT MAX(cnt) as peak FROM (
@@ -146,7 +199,7 @@ function getStats(network, service, periodSeconds) {
         GROUP BY timestamp / 60
       )`
     )
-    .get(network, service, now - 3600);
+    .get(network, service, recentSince);
 
   // Use enough decimal places so low-traffic values don't round to 0
   const formatRate = (val) => {
@@ -156,7 +209,7 @@ function getStats(network, service, periodSeconds) {
   };
 
   const currentReqPerSec = formatRate((lastMinute?.cnt || 0) / 60);
-  const hourlyPeak = peakHour?.peak ? peakHour.peak / 3600 : 0;
+  const hourlyPeak = peakHour?.peak || 0; // Already in req/sec from stored peak_rps
   const minutePeak = peakMinute?.peak ? peakMinute.peak / 60 : 0;
   // Peak is the max of: hourly historical peak, per-minute recent peak, and current rate
   const peakReqPerSec = formatRate(Math.max(hourlyPeak, minutePeak, currentReqPerSec));
@@ -218,14 +271,36 @@ function getChartData(network, service, periodSeconds, points) {
 
 function calculateUptime(d, network, service, since, now) {
   const totalHours = Math.max(1, Math.floor((now - since) / 3600));
-  const downHours = d
+
+  // Count hours that have records (both up and down)
+  const recorded = d
     .prepare(
-      `SELECT COUNT(*) as cnt FROM hourly_stats
-       WHERE network = ? AND service = ? AND hour_ts >= ? AND request_count = 0`
+      `SELECT COUNT(*) as total,
+              SUM(CASE WHEN request_count > 0 THEN 1 ELSE 0 END) as up
+       FROM hourly_stats
+       WHERE network = ? AND service = ? AND hour_ts >= ?`
     )
     .get(network, service, since);
-  const up = totalHours - (downHours?.cnt || 0);
-  return ((up / totalHours) * 100).toFixed(2) + "%";
+
+  // Also check if there are any recent raw logs (last hour, not yet aggregated)
+  const recentActivity = d
+    .prepare(
+      `SELECT COUNT(*) as cnt FROM request_log
+       WHERE network = ? AND service = ? AND timestamp >= ?`
+    )
+    .get(network, service, now - 3600);
+
+  const recordedHours = recorded?.total || 0;
+  const upHours = (recorded?.up || 0) + (recentActivity?.cnt > 0 ? 1 : 0);
+
+  // If no data at all, show N/A instead of misleading 100%
+  if (recordedHours === 0 && (!recentActivity || recentActivity.cnt === 0)) {
+    return "N/A";
+  }
+
+  // Use recorded hours + current hour as denominator
+  const denominator = Math.min(totalHours, recordedHours + 1);
+  return ((upHours / denominator) * 100).toFixed(2) + "%";
 }
 
 function formatBucketTime(ts, periodSeconds) {
