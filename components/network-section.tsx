@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Activity, AlertTriangle, Gauge, Radio, Server, Timer, Zap } from "lucide-react"
+import { Activity, Gauge, Radio, Server, Timer, Zap } from "lucide-react"
 import type { Network, ServiceType, TimePeriod } from "@/lib/dashboard-data"
 import {
   ENDPOINTS,
@@ -74,7 +74,7 @@ export function NetworkSection({ network }: NetworkSectionProps) {
         </p>
       )}
 
-      <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-5">
         <StatCard
           label="Requests"
           value={formatFullNumber(stats?.totalRequests ?? 0)}
@@ -104,19 +104,11 @@ export function NetworkSection({ network }: NetworkSectionProps) {
           isLoading={statsLoading}
         />
         <StatCard
-          label="5xx errors"
-          value={formatFullNumber(stats?.totalErrors ?? 0)}
-          hint={
-            stats?.errorRate !== undefined ? `${stats.errorRate}% of requests` : undefined
-          }
-          icon={<AlertTriangle className="size-3" />}
-          isLoading={statsLoading}
-        />
-        <StatCard
           label="Availability"
           value={stats?.uptime ?? "—"}
           icon={<Server className="size-3" />}
           isLoading={statsLoading}
+          className="col-span-2 lg:col-span-1"
         />
       </div>
 
