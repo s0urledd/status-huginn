@@ -1,10 +1,18 @@
 import useSWR from "swr"
-import type { Network, ServiceType, TimePeriod, EndpointStats, ChartDataPoint } from "./dashboard-data"
+import type {
+  ChartResponse,
+  EndpointStats,
+  Network,
+  ServiceType,
+  TimePeriod,
+} from "./dashboard-data"
 
 const fetcher = (url: string) => fetch(url).then((r) => {
   if (!r.ok) throw new Error(`HTTP ${r.status}`)
   return r.json()
 })
+
+const swrOptions = { refreshInterval: 30_000, dedupingInterval: 5_000 }
 
 export function useMetricsStats(
   network: Network,
@@ -14,7 +22,7 @@ export function useMetricsStats(
   const { data, error, isLoading } = useSWR<EndpointStats>(
     `/api/metrics?network=${network}&service=${service}&period=${period}&type=stats`,
     fetcher,
-    { refreshInterval: 30_000, dedupingInterval: 5_000 }
+    swrOptions
   )
 
   return { stats: data, error, isLoading }
@@ -25,11 +33,11 @@ export function useMetricsChart(
   service: ServiceType,
   period: TimePeriod
 ) {
-  const { data, error, isLoading } = useSWR<{ data: ChartDataPoint[] }>(
+  const { data, error, isLoading } = useSWR<ChartResponse>(
     `/api/metrics?network=${network}&service=${service}&period=${period}&type=chart`,
     fetcher,
-    { refreshInterval: 30_000, dedupingInterval: 5_000 }
+    swrOptions
   )
 
-  return { chartData: data?.data, error, isLoading }
+  return { chart: data, chartData: data?.data, error, isLoading }
 }

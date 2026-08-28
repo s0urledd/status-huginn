@@ -1,140 +1,146 @@
 "use client"
 
 import { useState } from "react"
-import { cn } from "@/lib/utils"
+import { Activity, AlertTriangle, Gauge, Radio, Server, Timer, Zap } from "lucide-react"
 import type { Network, ServiceType, TimePeriod } from "@/lib/dashboard-data"
-import { ENDPOINTS, formatFullNumber, formatNumber } from "@/lib/dashboard-data"
-import { useMetricsStats, useMetricsChart } from "@/lib/use-metrics"
+import {
+  ENDPOINTS,
+  describeRange,
+  formatBucketSize,
+  formatFullNumber,
+  formatNumber,
+} from "@/lib/dashboard-data"
+import { useMetricsChart, useMetricsStats } from "@/lib/use-metrics"
+import { Segmented, type SegmentedOption } from "@/components/segmented"
 import { StatCard } from "@/components/stat-card"
 import { RequestChart } from "@/components/request-chart"
 import { EndpointCard } from "@/components/endpoint-card"
-import { PeriodSelector } from "@/components/period-selector"
-import { Activity, Server, Zap, BarChart3, TrendingUp, Gauge, ArrowUpRight, Clock, Loader2 } from "lucide-react"
 
-const endpointTabs: { value: ServiceType; label: string; icon: React.ReactNode }[] = [
+const services: SegmentedOption<ServiceType>[] = [
   { value: "rpc", label: "RPC", icon: <Server className="size-3.5" /> },
-  { value: "wss", label: "WSS", icon: <Zap className="size-3.5" /> },
+  { value: "wss", label: "WebSocket", icon: <Zap className="size-3.5" /> },
   { value: "validator_api", label: "Staking API", icon: <Activity className="size-3.5" /> },
 ]
 
-const periodLabels: Record<TimePeriod, string> = {
-  daily: "Last 24 Hours",
-  weekly: "Last 7 Days",
-  monthly: "Last 30 Days",
-  total: "All Time",
+const periods: SegmentedOption<TimePeriod>[] = [
+  { value: "daily", label: "24h" },
+  { value: "weekly", label: "7d" },
+  { value: "monthly", label: "30d" },
+  { value: "total", label: "All" },
+]
+
+const protocols: Record<ServiceType, string> = {
+  rpc: "https",
+  wss: "wss",
+  validator_api: "https",
 }
 
 interface NetworkSectionProps {
-  title: string
-  subtitle: string
   network: Network
 }
 
-export function NetworkSection({ title, subtitle, network }: NetworkSectionProps) {
-  const [activeEndpoint, setActiveEndpoint] = useState<ServiceType>("rpc")
+export function NetworkSection({ network }: NetworkSectionProps) {
+  const [service, setService] = useState<ServiceType>("rpc")
   const [period, setPeriod] = useState<TimePeriod>("daily")
 
-  const { stats, isLoading: statsLoading, error: statsError } = useMetricsStats(network, activeEndpoint, period)
-  const { chartData, isLoading: chartLoading, error: chartError } = useMetricsChart(network, activeEndpoint, period)
+  const { stats, isLoading: statsLoading, error: statsError } = useMetricsStats(
+    network,
+    service,
+    period
+  )
+  const { chart, chartData, isLoading: chartLoading, error: chartError } = useMetricsChart(
+    network,
+    service,
+    period
+  )
 
-  const endpoint = ENDPOINTS[network][activeEndpoint]
-  const isError = statsError || chartError
-  const isLoading = statsLoading || chartLoading
+  // The server clamps every window to the first request it ever recorded, so
+  // this is the real measured range - not the nominal one the button implies.
+  const range = describeRange(stats?.rangeStart, stats?.rangeEnd)
+  const error = statsError || chartError
 
   return (
-    <section className="flex flex-col gap-5">
-      {/* Section Header */}
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-2.5">
-            <div
-              className={cn(
-                "size-2 rounded-full",
-                network === "mainnet" ? "bg-green-400 shadow-sm shadow-green-400/50" : "bg-green-400 shadow-sm shadow-green-400/50"
-              )}
-            />
-            <h2 className="text-xl font-bold text-foreground lg:text-2xl">{title}</h2>
-          </div>
-          <p className="text-xs text-muted-foreground pl-[18px]">{subtitle}</p>
-        </div>
-        <PeriodSelector selected={period} onSelect={setPeriod} />
+    <section className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Segmented options={services} value={service} onChange={setService} />
+        <Segmented options={periods} value={period} onChange={setPeriod} size="sm" />
       </div>
 
-      {/* Endpoint Tabs */}
-      <div className="flex items-center gap-0.5 rounded-lg border border-border/50 bg-secondary/50 p-0.5 w-fit">
-        {endpointTabs.map((tab) => (
-          <button
-            key={tab.value}
-            onClick={() => setActiveEndpoint(tab.value)}
-            className={cn(
-              "flex items-center gap-1.5 rounded-md px-3.5 py-2 text-xs font-medium transition-all",
-              activeEndpoint === tab.value
-                ? "bg-card text-foreground border border-border/50 shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            {tab.icon}
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <EndpointCard endpoint={ENDPOINTS[network][service]} protocol={protocols[service]} />
 
-      {/* Endpoint URL */}
-      <EndpointCard
-        label={
-          activeEndpoint === "rpc"
-            ? "RPC Endpoint"
-            : activeEndpoint === "wss"
-            ? "WebSocket Endpoint"
-            : "Staking API Endpoint"
-        }
-        endpoint={endpoint}
-        type={activeEndpoint === "wss" ? "wss" : activeEndpoint === "rpc" ? "rpc" : "api"}
-      />
-
-      {/* Error State */}
-      {isError && (
-        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-sm text-amber-400">
-          Metrics sunucusuna baglanilamiyor. Veriler yukleniyor...
-        </div>
+      {error && (
+        <p className="rounded-xl border border-amber-500/25 bg-amber-500/5 px-4 py-3 text-sm text-amber-300">
+          Can&apos;t reach the metrics server right now. Retrying automatically.
+        </p>
       )}
 
-      {/* Summary Stats */}
-      <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-5 lg:gap-3">
+      <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 lg:grid-cols-6">
         <StatCard
-          label="Total Requests"
-          value={statsLoading ? "..." : formatFullNumber(stats?.totalRequests ?? 0)}
-          icon={statsLoading ? <Loader2 className="size-3 animate-spin" /> : <BarChart3 className="size-3" />}
+          label="Requests"
+          value={formatFullNumber(stats?.totalRequests ?? 0)}
+          hint={range ? `over ${range.span}` : undefined}
+          icon={<Radio className="size-3" />}
+          isLoading={statsLoading}
         />
         <StatCard
-          label="Avg Req/Sec"
-          value={statsLoading ? "..." : formatNumber(stats?.avgReqPerSec ?? 0)}
-          icon={<TrendingUp className="size-3" />}
+          label="Avg req/s"
+          value={formatNumber(stats?.avgReqPerSec ?? 0)}
+          hint={range ? `over ${range.span}` : undefined}
+          icon={<Activity className="size-3" />}
+          isLoading={statsLoading}
         />
         <StatCard
-          label="Current Req/Sec"
-          value={statsLoading ? "..." : formatNumber(stats?.currentReqPerSec ?? 0)}
+          label="Now req/s"
+          value={formatNumber(stats?.currentReqPerSec ?? 0)}
+          hint="last 60s"
           icon={<Gauge className="size-3" />}
+          isLoading={statsLoading}
         />
         <StatCard
-          label="Peak Req/Sec"
-          value={statsLoading ? "..." : formatNumber(stats?.peakReqPerSec ?? 0)}
-          icon={<ArrowUpRight className="size-3" />}
+          label="Peak req/s"
+          value={formatNumber(stats?.peakReqPerSec ?? 0)}
+          hint="per minute"
+          icon={<Timer className="size-3" />}
+          isLoading={statsLoading}
         />
         <StatCard
-          label="Uptime"
-          value={statsLoading ? "..." : (stats?.uptime ?? "—")}
-          icon={<Clock className="size-3" />}
-          className="col-span-2 lg:col-span-1"
+          label="5xx errors"
+          value={formatFullNumber(stats?.totalErrors ?? 0)}
+          hint={
+            stats?.errorRate !== undefined ? `${stats.errorRate}% of requests` : undefined
+          }
+          icon={<AlertTriangle className="size-3" />}
+          isLoading={statsLoading}
+        />
+        <StatCard
+          label="Availability"
+          value={stats?.uptime ?? "—"}
+          hint={
+            stats?.gapHours
+              ? `${stats.gapHours}h with no traffic`
+              : stats?.observedHours
+              ? `over ${stats.observedHours}h`
+              : undefined
+          }
+          icon={<Server className="size-3" />}
+          isLoading={statsLoading}
         />
       </div>
 
-      {/* Chart */}
       <RequestChart
         data={chartData ?? []}
-        periodLabel={periodLabels[period]}
+        bucketLabel={formatBucketSize(chart?.bucketSeconds)}
         isLoading={chartLoading}
       />
+
+      {range && (
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
+          Measured from {range.since} to now ({range.span}) — no window reaches back
+          past the first request recorded for this endpoint. Availability scores each
+          hour by its share of non-5xx responses; an elapsed hour with no traffic at
+          all counts as zero.
+        </p>
+      )}
     </section>
   )
 }

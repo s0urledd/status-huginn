@@ -1,32 +1,35 @@
-"use client"
-
-import { cn } from "@/lib/utils"
 import type { ReactNode } from "react"
+import { cn } from "@/lib/utils"
 
 interface StatCardProps {
   label: string
   value: string
+  hint?: string
   icon?: ReactNode
+  isLoading?: boolean
   className?: string
 }
 
-export function StatCard({ label, value, icon, className }: StatCardProps) {
+export function StatCard({ label, value, hint, icon, isLoading, className }: StatCardProps) {
   return (
     <div
       className={cn(
-        "group relative flex flex-col gap-2 rounded-xl border border-border/50 bg-secondary/50 p-4 transition-colors hover:border-primary/20 hover:bg-secondary",
+        "rounded-xl border border-border bg-card p-3.5 backdrop-blur-xl",
         className
       )}
     >
-      <div className="flex items-center gap-2">
-        {icon && <span className="text-muted-foreground">{icon}</span>}
-        <span className="text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
-          {label}
-        </span>
+      <div className="flex items-center gap-1.5 text-muted-foreground">
+        {icon}
+        <span className="text-[11px] font-medium uppercase tracking-wider">{label}</span>
       </div>
-      <span className="text-2xl font-bold text-foreground tracking-tight font-mono lg:text-[1.65rem]">
-        {value}
-      </span>
+      {isLoading ? (
+        <div className="mt-2.5 h-5 w-20 animate-pulse rounded bg-white/10" />
+      ) : (
+        <div className="mt-1.5 font-mono text-xl font-semibold tabular-nums tracking-tight">
+          {value}
+        </div>
+      )}
+      {hint && <div className="mt-1 text-[11px] text-muted-foreground">{hint}</div>}
     </div>
   )
 }

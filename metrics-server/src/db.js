@@ -148,11 +148,62 @@ function aggregateHourly() {
   runAggregation();
 }
 
-// Get stats for a specific period
+// Smallest window we are willing to report on, so a brand-new deployment does
+// not divide by zero seconds.
+const MIN_WINDOW = 3600;
+
+// Earliest moment we hold any data for. Returns null when nothing was recorded
+// yet. Aggregated hours and not-yet-aggregated raw rows are disjoint sets, so
+// both have to be consulted.
+function getDataStart(network, service) {
+  const d = getDb();
+  const hourly = d
+    .prepare(
+      "SELECT MIN(hour_ts) as ts FROM hourly_stats WHERE network = ? AND service = ? AND request_count > 0"
+    )
+    .get(network, service);
+  const raw = d
+    .prepare("SELECT MIN(timestamp) as ts FROM request_log WHERE network = ? AND service = ?")
+    .get(network, service);
+
+  const candidates = [hourly?.ts, raw?.ts].filter((ts) => typeof ts === "number" && ts > 0);
+  return candidates.length ? Math.min(...candidates) : null;
+}
+
+// Resolve the window a query should actually cover.
+//
+// `periodSeconds` of null/0 means "all time", which spans from the first
+// recorded request to now instead of some arbitrary fixed lookback. Fixed
+// periods are clamped the same way: we never report on time before metrics
+// collection started, so a 30d view on a 5-day-old service covers 5 days
+// rather than padding the chart with 25 empty days.
+function resolveWindow(network, service, periodSeconds) {
+  const now = Math.floor(Date.now() / 1000);
+  const dataStart = getDataStart(network, service);
+  // End of the hour in progress. Anchoring here keeps fixed periods a whole
+  // number of hours wide, which is what hourly_stats buckets on.
+  const endAligned = Math.floor(now / 3600) * 3600 + 3600;
+
+  let start;
+  if (periodSeconds > 0) {
+    start = endAligned - periodSeconds;
+    if (dataStart !== null) start = Math.max(start, dataStart);
+  } else {
+    start = dataStart !== null ? dataStart : now - MIN_WINDOW;
+  }
+
+  // Align to the hour so the first partial hour of data is not dropped by the
+  // hourly_stats lookups, which key on hour boundaries.
+  const since = Math.floor(start / 3600) * 3600;
+  const spanSeconds = Math.max(MIN_WINDOW, now - since);
+
+  return { now, endAligned, since, spanSeconds, dataStart };
+}
+
+// Get stats for a specific period. Pass a falsy periodSeconds for all-time.
 function getStats(network, service, periodSeconds) {
   const d = getDb();
-  const now = Math.floor(Date.now() / 1000);
-  const since = now - periodSeconds;
+  const { now, since, spanSeconds, dataStart } = resolveWindow(network, service, periodSeconds);
 
   // Hourly aggregated data
   const hourlyData = d
@@ -162,7 +213,7 @@ function getStats(network, service, periodSeconds) {
     )
     .get(network, service, since);
 
-  // Recent raw data (last hour, not yet aggregated)
+  // Recent raw data (not yet aggregated; disjoint from hourly_stats)
   const recentData = d
     .prepare(
       `SELECT COUNT(*) as total, SUM(CASE WHEN status >= 500 THEN 1 ELSE 0 END) as errors, AVG(response_time) as avg_rt
@@ -190,7 +241,6 @@ function getStats(network, service, periodSeconds) {
     .get(network, service, since);
 
   // Peak req/sec from recent raw data (per-minute granularity, covers data not yet aggregated)
-  const recentSince = Math.max(since, now - 3600);
   const peakMinute = d
     .prepare(
       `SELECT MAX(cnt) as peak FROM (
@@ -199,7 +249,7 @@ function getStats(network, service, periodSeconds) {
         GROUP BY timestamp / 60
       )`
     )
-    .get(network, service, recentSince);
+    .get(network, service, since);
 
   // Use enough decimal places so low-traffic values don't round to 0
   const formatRate = (val) => {
@@ -214,110 +264,170 @@ function getStats(network, service, periodSeconds) {
   // Peak is the max of: hourly historical peak, per-minute recent peak, and current rate
   const peakReqPerSec = formatRate(Math.max(hourlyPeak, minutePeak, currentReqPerSec));
 
+  const availability = calculateAvailability(d, network, service, since, now);
+
   return {
     totalRequests,
     totalErrors,
-    avgReqPerSec: periodSeconds > 0 ? formatRate(totalRequests / periodSeconds) : 0,
+    // Share of responses that were 5xx, as a percentage.
+    errorRate: totalRequests > 0 ? parseFloat(((totalErrors / totalRequests) * 100).toFixed(3)) : 0,
+    // Averaged over the window we actually have data for, not over the
+    // nominal period length.
+    avgReqPerSec: formatRate(totalRequests / spanSeconds),
     currentReqPerSec,
     peakReqPerSec,
-    uptime: calculateUptime(d, network, service, since, now),
+    uptime: availability.uptime,
+    // Why the availability number is what it is.
+    observedHours: availability.observedHours,
+    activeHours: availability.activeHours,
+    gapHours: availability.gapHours,
+    // Window the numbers above describe, so the dashboard can label it.
+    rangeStart: since,
+    rangeEnd: now,
+    dataStart,
   };
 }
 
-// Get chart data points
+// Get chart data points. Buckets start at the first hour we hold data for and
+// run to now, so no leading run of empty buckets is ever rendered.
 function getChartData(network, service, periodSeconds, points) {
   const d = getDb();
-  const now = Math.floor(Date.now() / 1000);
-  // Align to hour boundary so buckets match hourly_stats hour_ts values
-  const nowAligned = Math.floor(now / 3600) * 3600 + 3600;
-  const bucketSize = Math.floor(periodSeconds / points);
-  // Align bucket size to hour multiples for daily view
-  const alignedBucketSize = periodSeconds <= 86400
-    ? 3600
-    : Math.max(3600, Math.floor(bucketSize / 3600) * 3600);
-  const since = nowAligned - alignedBucketSize * points;
+  const { now, endAligned, since, dataStart } = resolveWindow(network, service, periodSeconds);
 
-  const result = [];
-  for (let i = 0; i < points; i++) {
-    const bucketStart = since + i * alignedBucketSize;
-    const bucketEnd = bucketStart + alignedBucketSize;
+  const startAligned = since;
+  const spanSeconds = Math.max(3600, endAligned - startAligned);
+  const spanHours = Math.ceil(spanSeconds / 3600);
 
-    const data = d
-      .prepare(
-        `SELECT COALESCE(SUM(request_count), 0) as total
-         FROM hourly_stats WHERE network = ? AND service = ? AND hour_ts >= ? AND hour_ts < ?`
-      )
-      .get(network, service, bucketStart, bucketEnd);
+  // Whole hours per bucket, sized so we never emit more than `points` buckets.
+  const bucketHours = Math.max(1, Math.ceil(spanHours / points));
+  const bucketSeconds = bucketHours * 3600;
+  const bucketCount = Math.max(1, Math.ceil(spanHours / bucketHours));
 
-    // Also include recent raw data if bucket overlaps with the last hour
-    let recentTotal = 0;
-    if (bucketEnd > now - 3600) {
-      const recent = d
-        .prepare(
-          `SELECT COUNT(*) as cnt FROM request_log WHERE network = ? AND service = ? AND timestamp >= ? AND timestamp < ?`
-        )
-        .get(network, service, Math.max(bucketStart, now - 3600), Math.min(bucketEnd, now + 1));
-      recentTotal = recent?.cnt || 0;
-    }
+  const hourlyStmt = d.prepare(
+    `SELECT COALESCE(SUM(request_count), 0) as total
+     FROM hourly_stats WHERE network = ? AND service = ? AND hour_ts >= ? AND hour_ts < ?`
+  );
+  const rawStmt = d.prepare(
+    `SELECT COUNT(*) as cnt FROM request_log
+     WHERE network = ? AND service = ? AND timestamp >= ? AND timestamp < ?`
+  );
 
-    result.push({
-      time: formatBucketTime(bucketStart, periodSeconds),
-      totalRequests: (data?.total || 0) + recentTotal,
+  const data = [];
+  for (let i = 0; i < bucketCount; i++) {
+    const bucketStart = startAligned + i * bucketSeconds;
+    const bucketEnd = bucketStart + bucketSeconds;
+
+    const hourly = hourlyStmt.get(network, service, bucketStart, bucketEnd);
+    // hourly_stats and request_log never hold the same request, so these add up.
+    const raw = rawStmt.get(network, service, bucketStart, bucketEnd);
+
+    data.push({
+      time: formatBucketTime(bucketStart, bucketSeconds, spanSeconds),
+      timestamp: bucketStart,
+      totalRequests: (hourly?.total || 0) + (raw?.cnt || 0),
     });
   }
 
-  return result;
+  return {
+    data,
+    rangeStart: startAligned,
+    rangeEnd: now,
+    bucketSeconds,
+    dataStart,
+  };
 }
 
-function calculateUptime(d, network, service, since, now) {
-  const totalHours = Math.max(1, Math.floor((now - since) / 3600));
+/**
+ * Availability for the window.
+ *
+ * The old number counted an hour as "up" whenever it had at least one request.
+ * Any endpoint that is being used at all gets a request every hour, so every
+ * hour scored as up and the figure was pinned at 100.00% - it could not fall,
+ * and because the in-progress hour was added on top of a capped denominator it
+ * could even read over 100%. Meanwhile error_count was collected on every hour
+ * and never used, so real 5xx failures were invisible in the one number people
+ * actually look at.
+ *
+ * What we can honestly derive from an nginx access log: each hour scores its
+ * share of non-5xx responses, and an elapsed hour with no requests at all
+ * scores zero because a live endpoint should be receiving traffic. Averaging
+ * those hourly scores gives an availability that moves with real failures.
+ */
+function calculateAvailability(d, network, service, since, now) {
+  // `since` is hour-aligned, so this is an exact count of hour slots that have
+  // fully elapsed. The hour in progress is scored only if it saw traffic: a
+  // service that has not been hit in the last few minutes is not down.
+  const currentHourStart = Math.floor(now / 3600) * 3600;
+  const elapsedHours = Math.max(0, (currentHourStart - since) / 3600);
 
-  // Count hours that have records (both up and down)
-  const recorded = d
+  // Merge both stores per hour. hourly_stats holds aggregated hours,
+  // request_log the ones not yet aggregated, and an hour part-way through
+  // aggregation lives in both - grouping by hour adds those halves up instead
+  // of counting the hour twice.
+  const hours = d
     .prepare(
-      `SELECT COUNT(*) as total,
-              SUM(CASE WHEN request_count > 0 THEN 1 ELSE 0 END) as up
-       FROM hourly_stats
-       WHERE network = ? AND service = ? AND hour_ts >= ?`
+      `SELECT h, SUM(rc) AS request_count, SUM(ec) AS error_count FROM (
+         SELECT hour_ts AS h, request_count AS rc, error_count AS ec
+         FROM hourly_stats
+         WHERE network = ? AND service = ? AND hour_ts >= ?
+         UNION ALL
+         SELECT (timestamp / 3600) * 3600 AS h, 1 AS rc,
+                CASE WHEN status >= 500 THEN 1 ELSE 0 END AS ec
+         FROM request_log
+         WHERE network = ? AND service = ? AND timestamp >= ?
+       )
+       GROUP BY h`
     )
-    .get(network, service, since);
+    .all(network, service, since, network, service, since);
 
-  // Also check if there are any recent raw logs (last hour, not yet aggregated)
-  const recentActivity = d
-    .prepare(
-      `SELECT COUNT(*) as cnt FROM request_log
-       WHERE network = ? AND service = ? AND timestamp >= ?`
-    )
-    .get(network, service, now - 3600);
-
-  const recordedHours = recorded?.total || 0;
-  const upHours = (recorded?.up || 0) + (recentActivity?.cnt > 0 ? 1 : 0);
-
-  // If no data at all, show N/A instead of misleading 100%
-  if (recordedHours === 0 && (!recentActivity || recentActivity.cnt === 0)) {
-    return "N/A";
+  let activeHours = 0;
+  let activeCompletedHours = 0;
+  let currentHourActive = false;
+  let score = 0;
+  for (const hour of hours) {
+    if (!hour.request_count) continue;
+    activeHours++;
+    score += 1 - (hour.error_count || 0) / hour.request_count;
+    if (hour.h < currentHourStart) activeCompletedHours++;
+    else currentHourActive = true;
   }
 
-  // Use recorded hours + current hour as denominator
-  const denominator = Math.min(totalHours, recordedHours + 1);
-  return ((upHours / denominator) * 100).toFixed(2) + "%";
+  // Nothing recorded at all - say so rather than claiming a misleading 100%.
+  if (activeHours === 0) {
+    return { uptime: "N/A", observedHours: elapsedHours, activeHours: 0, gapHours: 0 };
+  }
+
+  // Every elapsed hour is scored, plus the hour in progress once it has
+  // traffic - so the score can never exceed the denominator.
+  const observedHours = elapsedHours + (currentHourActive ? 1 : 0);
+  // Elapsed hours that recorded nothing at all. Each one scores zero above.
+  const gapHours = Math.max(0, elapsedHours - activeCompletedHours);
+
+  return {
+    uptime: ((score / Math.max(1, observedHours)) * 100).toFixed(2) + "%",
+    observedHours,
+    activeHours,
+    gapHours,
+  };
 }
 
-function formatBucketTime(ts, periodSeconds) {
+// Label a bucket by how wide it is, not by the period it came from: an
+// all-time view can hold hour-wide buckets on day one and week-wide ones later.
+function formatBucketTime(ts, bucketSeconds, spanSeconds) {
   const date = new Date(ts * 1000);
-  if (periodSeconds <= 86400) {
+  const pad = (n) => String(n).padStart(2, "0");
+  const day = () =>
+    date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+
+  if (bucketSeconds < 86400) {
     // Use UTC so bucket labels match hour boundaries regardless of server TZ
-    const h = String(date.getUTCHours()).padStart(2, "0");
-    const m = String(date.getUTCMinutes()).padStart(2, "0");
-    return `${h}:${m}`;
+    const hm = `${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`;
+    return spanSeconds <= 172800 ? hm : `${day()} ${hm}`;
   }
-  if (periodSeconds <= 604800) {
-    return date.toLocaleDateString("en-US", { weekday: "short" });
+  if (bucketSeconds < 2419200) {
+    return day();
   }
-  if (periodSeconds <= 2592000) {
-    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  }
-  return date.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+  return date.toLocaleDateString("en-US", { month: "short", year: "2-digit", timeZone: "UTC" });
 }
 
 // Get total request count for a service (all time)
@@ -334,6 +444,8 @@ function getTotalRequests(network, service) {
 
 module.exports = {
   getDb,
+  getDataStart,
+  resolveWindow,
   insertRequest,
   insertRequests,
   aggregateHourly,
