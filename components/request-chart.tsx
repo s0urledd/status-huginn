@@ -94,6 +94,9 @@ export function RequestChart({ data, bucketLabel, isLoading }: RequestChartProps
                 strokeWidth={1.75}
                 fill="url(#requestFill)"
                 activeDot={{ r: 3, fill: "#836ef9", stroke: "#0e091c", strokeWidth: 2 }}
+                // The series polls every 30s and re-animating the whole area on
+                // each refresh just makes the page flicker.
+                isAnimationActive={false}
               />
             </AreaChart>
           </ResponsiveContainer>
