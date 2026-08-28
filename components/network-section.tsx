@@ -119,13 +119,8 @@ export function NetworkSection({ network }: NetworkSectionProps) {
       />
 
       {range && (
-        <p className="text-[11px] leading-relaxed text-muted-foreground">
-          Measured from {range.since} to now ({range.span}) — no window reaches back
-          past the first request recorded for this endpoint. Availability is the share
-          of requests answered without a 5xx. An access log cannot tell a quiet hour
-          from a dead one, so hours with no traffic at all count as no data rather
-          than downtime
-          {stats?.gapHours ? ` — ${stats.gapHours}h of this window` : ""}.
+        <p className="text-[11px] text-muted-foreground">
+          {range.since} → now · availability = share of requests answered without a 5xx
         </p>
       )}
     </section>
