@@ -77,7 +77,7 @@ test("the 24h view keeps hourly resolution", () => {
   assert.strictEqual(chart.data.length, 24);
 });
 
-test("availability reports 100% only when every hour was clean", () => {
+test("availability reports 100% only when every request succeeded", () => {
   const { uptime, gapHours } = db.getStats("mainnet", "rpc", null);
   assert.strictEqual(gapHours, 0);
   assert.strictEqual(uptime, "100.00%");
@@ -98,26 +98,36 @@ test("availability never exceeds 100% once the current hour has traffic", () => 
   assert.ok(parseFloat(uptime) <= 100, `uptime ${uptime} exceeds 100%`);
 });
 
-test("hours with no traffic and 5xx responses both pull availability down", () => {
-  const d = db.getDb();
-  // One dead hour and one hour where a third of responses failed.
-  d.prepare("UPDATE hourly_stats SET request_count = 0, error_count = 0 WHERE hour_ts = ?").run(
-    firstHour + 5 * HOUR
-  );
-  d.prepare("UPDATE hourly_stats SET error_count = ? WHERE hour_ts = ?").run(
-    REQ_PER_HOUR / 3,
-    firstHour + 6 * HOUR
-  );
+test("an hour with no traffic is reported as a gap, not as downtime", () => {
+  const before = db.getStats("mainnet", "rpc", null);
 
-  const { uptime, gapHours, observedHours } = db.getStats("mainnet", "rpc", null);
-  assert.strictEqual(gapHours, 1);
+  // A quiet hour and a dead hour are indistinguishable in an access log, so
+  // neither may be charged against the percentage.
+  db.getDb()
+    .prepare("UPDATE hourly_stats SET request_count = 0, error_count = 0 WHERE hour_ts = ?")
+    .run(firstHour + 5 * HOUR);
 
-  // One dead hour plus a third of another, over the observed window.
-  const expected = ((observedHours - 1 - 1 / 3) / observedHours) * 100;
+  const after = db.getStats("mainnet", "rpc", null);
+  assert.strictEqual(after.gapHours, 1, "the empty hour should surface as a gap");
+  assert.strictEqual(after.uptime, before.uptime, "a quiet hour must not move availability");
+});
+
+test("5xx responses do pull availability down", () => {
+  // A third of one hour's responses fail.
+  db.getDb()
+    .prepare("UPDATE hourly_stats SET error_count = ? WHERE hour_ts = ?")
+    .run(REQ_PER_HOUR / 3, firstHour + 6 * HOUR);
+
+  const { uptime, totalRequests, totalErrors } = db.getStats("mainnet", "rpc", null);
+
+  // Availability is request-weighted, so it must agree with the error count
+  // shown beside it on the dashboard.
+  const expected = ((totalRequests - totalErrors) / totalRequests) * 100;
   assert.ok(
-    Math.abs(parseFloat(uptime) - expected) < 0.05,
-    `expected ~${expected.toFixed(2)}%, got ${uptime}`
+    Math.abs(parseFloat(uptime) - expected) < 0.005,
+    `expected ${expected.toFixed(2)}%, got ${uptime}`
   );
+  assert.ok(parseFloat(uptime) < 100, "a failing hour must move the number");
 });
 
 test("a service with no data at all reports N/A rather than 100%", () => {

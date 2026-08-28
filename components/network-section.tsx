@@ -117,9 +117,9 @@ export function NetworkSection({ network }: NetworkSectionProps) {
           value={stats?.uptime ?? "—"}
           hint={
             stats?.gapHours
-              ? `${stats.gapHours}h with no traffic`
+              ? `${stats.gapHours}h no data`
               : stats?.observedHours
-              ? `over ${stats.observedHours}h`
+              ? `over ${stats.observedHours}h of traffic`
               : undefined
           }
           icon={<Server className="size-3" />}
@@ -136,9 +136,10 @@ export function NetworkSection({ network }: NetworkSectionProps) {
       {range && (
         <p className="text-[11px] leading-relaxed text-muted-foreground">
           Measured from {range.since} to now ({range.span}) — no window reaches back
-          past the first request recorded for this endpoint. Availability scores each
-          hour by its share of non-5xx responses; an elapsed hour with no traffic at
-          all counts as zero.
+          past the first request recorded for this endpoint. Availability is the share
+          of requests answered without a 5xx. Hours with no traffic are counted as no
+          data rather than downtime, since an access log cannot tell a quiet hour from
+          a dead one; they are reported beside the figure instead.
         </p>
       )}
     </section>
