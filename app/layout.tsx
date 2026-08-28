@@ -1,10 +1,24 @@
 import type { Metadata, Viewport } from 'next'
+import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
 
+const geistSans = Geist({
+  subsets: ['latin'],
+  variable: '--font-geist-sans',
+  display: 'swap',
+})
+
+const geistMono = Geist_Mono({
+  subsets: ['latin'],
+  variable: '--font-geist-mono',
+  display: 'swap',
+})
+
 export const metadata: Metadata = {
-  title: 'Huginn | Monad Infrastructure',
-  description: 'Real-time status dashboard for Huginn Monad Mainnet & Testnet RPC, WSS, and Validator API endpoints.',
+  title: 'Huginn Status | Monad Infrastructure',
+  description:
+    'Live request metrics for Huginn Monad Mainnet & Testnet RPC, WebSocket, and Staking API endpoints.',
   icons: {
     icon: [
       { url: '/icon.svg', type: 'image/svg+xml' },
@@ -15,7 +29,7 @@ export const metadata: Metadata = {
 }
 
 export const viewport: Viewport = {
-  themeColor: '#836EF9',
+  themeColor: '#0e091c',
 }
 
 export default function RootLayout({
@@ -24,7 +38,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
       <body className="font-sans antialiased">
         {children}
         <Analytics />

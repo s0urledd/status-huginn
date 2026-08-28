@@ -1,47 +1,36 @@
 @import 'tailwindcss';
-@import 'tw-animate-css';
 
-@custom-variant dark (&:is(.dark *));
-
+/*
+ * Palette is lifted from monval.huginn.tech so both surfaces read as one
+ * product: Monad purple on a near-black violet ground, with panels drawn as
+ * translucent white rather than as their own solid colour.
+ */
 :root {
-  --background: #0a0a0f;
-  --foreground: #f0eef6;
-  --card: #13121d;
-  --card-foreground: #f0eef6;
-  --popover: #13121d;
-  --popover-foreground: #f0eef6;
-  --primary: #836EF9;
+  --background: #0e091c;
+  --foreground: #f4f2fb;
+  --card: #ffffff08;
+  --card-foreground: #f4f2fb;
+  --popover: #181028;
+  --popover-foreground: #f4f2fb;
+  --primary: #6e54ff;
   --primary-foreground: #ffffff;
-  --secondary: #1e1c2e;
-  --secondary-foreground: #f0eef6;
-  --muted: #1a1828;
-  --muted-foreground: #9793ad;
-  --accent: #2d2a45;
-  --accent-foreground: #f0eef6;
+  --secondary: #ffffff0d;
+  --secondary-foreground: #ddd7fe;
+  --muted: #ffffff0d;
+  --muted-foreground: #a89fc8;
+  --accent: #836ef9;
+  --accent-foreground: #ffffff;
   --destructive: #ef4444;
   --destructive-foreground: #ffffff;
-  --border: #2a2740;
-  --input: #2a2740;
-  --ring: #836EF9;
-  --chart-1: #836EF9;
-  --chart-2: #a78bfa;
-  --chart-3: #c4b5fd;
-  --chart-4: #6d5acf;
-  --chart-5: #4c3d99;
+  --border: #ffffff14;
+  --input: #ffffff0f;
+  --ring: #6e54ff;
   --radius: 0.75rem;
-  --sidebar: #13121d;
-  --sidebar-foreground: #f0eef6;
-  --sidebar-primary: #836EF9;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #1e1c2e;
-  --sidebar-accent-foreground: #f0eef6;
-  --sidebar-border: #2a2740;
-  --sidebar-ring: #836EF9;
 }
 
 @theme inline {
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --font-sans: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, 'JetBrains Mono', monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -61,46 +50,48 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
-  body {
-    @apply bg-background text-foreground;
-  }
   html {
     scroll-behavior: smooth;
   }
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    /* Fixed so the wash stays put while the page scrolls. */
+    background-image:
+      radial-gradient(1200px 800px at 80% -10%, #6e54ff29, transparent 60%),
+      radial-gradient(900px 700px at -10% 35%, #836ef912, transparent 60%),
+      radial-gradient(800px 600px at 55% 115%, #85e6ff0d, transparent 60%);
+    background-attachment: fixed;
+  }
   ::-webkit-scrollbar {
     width: 6px;
+    height: 6px;
   }
   ::-webkit-scrollbar-track {
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: #2a2740;
+    background: #ffffff1f;
     border-radius: 3px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #836EF9;
+    background: var(--primary);
   }
+}
+
+@utility gradient-title {
+  color: transparent;
+  background: linear-gradient(120deg, #fff 25%, #ddd7fe 60%, #a78bfa);
+  -webkit-background-clip: text;
+  background-clip: text;
 }

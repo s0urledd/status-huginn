@@ -34,20 +34,26 @@ app.get("/health", (req, res) => {
   res.json({ status: "ok", timestamp: Date.now() });
 });
 
-// Period to seconds mapping
+// Period to seconds mapping. `total` is null: it means "everything we have",
+// which db.js resolves to the first recorded request rather than a fixed
+// lookback, so the dashboard never shows time from before metrics started.
 const PERIOD_MAP = {
   daily: 86400,        // 24 hours
   weekly: 604800,      // 7 days
   monthly: 2592000,    // 30 days
-  total: 31536000,     // 365 days
+  total: null,         // since the first recorded request
 };
 
+// Upper bound on chart buckets. The real bucket count follows the window that
+// actually holds data, so a young deployment gets fewer, denser buckets.
 const CHART_POINTS = {
   daily: 24,
-  weekly: 7,
+  weekly: 28,
   monthly: 30,
-  total: 12,
+  total: 48,
 };
+
+const isValidPeriod = (period) => Object.prototype.hasOwnProperty.call(PERIOD_MAP, period);
 
 const VALID_SERVICES = ["rpc", "wss", "validator_api"];
 const VALID_NETWORKS = ["mainnet", "testnet"];
@@ -68,7 +74,7 @@ app.get("/api/stats", (req, res) => {
     });
   }
 
-  if (!PERIOD_MAP[period]) {
+  if (!isValidPeriod(period)) {
     return res.status(400).json({
       error: "Invalid period. Must be one of: " + Object.keys(PERIOD_MAP).join(", "),
     });
@@ -99,15 +105,15 @@ app.get("/api/chart", (req, res) => {
     });
   }
 
-  if (!PERIOD_MAP[period]) {
+  if (!isValidPeriod(period)) {
     return res.status(400).json({
       error: "Invalid period. Must be one of: " + Object.keys(PERIOD_MAP).join(", "),
     });
   }
 
   try {
-    const data = getChartData(network, service, PERIOD_MAP[period], CHART_POINTS[period]);
-    res.json({ network, service, period, data });
+    const chart = getChartData(network, service, PERIOD_MAP[period], CHART_POINTS[period]);
+    res.json({ network, service, period, ...chart });
   } catch (err) {
     console.error("[API] Chart error:", err.message);
     res.status(500).json({ error: "Internal server error" });
@@ -122,7 +128,7 @@ app.get("/api/overview", (req, res) => {
     return res.status(400).json({ error: "Invalid network" });
   }
 
-  if (!PERIOD_MAP[period]) {
+  if (!isValidPeriod(period)) {
     return res.status(400).json({ error: "Invalid period" });
   }
 
