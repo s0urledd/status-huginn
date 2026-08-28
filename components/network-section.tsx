@@ -104,8 +104,9 @@ export function NetworkSection({ network }: NetworkSectionProps) {
           isLoading={statsLoading}
         />
         <StatCard
-          label="Availability"
+          label="Uptime"
           value={stats?.uptime ?? "—"}
+          title="Share of requests answered without a 5xx"
           icon={<Server className="size-3" />}
           isLoading={statsLoading}
           className="col-span-2 lg:col-span-1"
@@ -118,11 +119,6 @@ export function NetworkSection({ network }: NetworkSectionProps) {
         isLoading={chartLoading}
       />
 
-      {range && (
-        <p className="text-[11px] text-muted-foreground">
-          {range.since} → now · availability = share of requests answered without a 5xx
-        </p>
-      )}
     </section>
   )
 }

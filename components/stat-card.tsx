@@ -5,14 +5,17 @@ interface StatCardProps {
   label: string
   value: string
   hint?: string
+  /** Hover text, for a figure whose basis is worth stating but not showing. */
+  title?: string
   icon?: ReactNode
   isLoading?: boolean
   className?: string
 }
 
-export function StatCard({ label, value, hint, icon, isLoading, className }: StatCardProps) {
+export function StatCard({ label, value, hint, title, icon, isLoading, className }: StatCardProps) {
   return (
     <div
+      title={title}
       className={cn(
         "rounded-xl border border-border bg-card p-3.5 backdrop-blur-xl",
         className
