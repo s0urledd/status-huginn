@@ -338,25 +338,27 @@ function getChartData(network, service, periodSeconds, points) {
 }
 
 /**
- * Availability for the window.
+ * Availability for the window: the share of requests we answered without a
+ * 5xx.
  *
- * The old number counted an hour as "up" whenever it had at least one request.
- * Any endpoint that is being used at all gets a request every hour, so every
- * hour scored as up and the figure was pinned at 100.00% - it could not fall,
- * and because the in-progress hour was added on top of a capped denominator it
- * could even read over 100%. Meanwhile error_count was collected on every hour
- * and never used, so real 5xx failures were invisible in the one number people
- * actually look at.
+ * An earlier version scored each elapsed hour and counted an hour with no
+ * requests at all as a zero, on the theory that a live endpoint should always
+ * be receiving traffic. That is not true of a testnet endpoint, and it is not
+ * something an access log can tell us: a quiet hour and a dead hour look
+ * identical from here, because both produce no lines. Counting them as
+ * downtime charged real outage against hours where nobody asked us anything -
+ * on the Huginn testnet RPC it read 96.08% against a 0.061% error rate.
  *
- * What we can honestly derive from an nginx access log: each hour scores its
- * share of non-5xx responses, and an elapsed hour with no requests at all
- * scores zero because a live endpoint should be receiving traffic. Averaging
- * those hourly scores gives an availability that moves with real failures.
+ * So the percentage now only claims what the log can actually support, and
+ * the hours we had no visibility into are reported separately rather than
+ * folded in. The honest limitation: if nginx itself is down nothing is
+ * logged, so that outage lands in `gapHours` and does not move the
+ * percentage. That is why callers should show both.
  */
 function calculateAvailability(d, network, service, since, now) {
   // `since` is hour-aligned, so this is an exact count of hour slots that have
-  // fully elapsed. The hour in progress is scored only if it saw traffic: a
-  // service that has not been hit in the last few minutes is not down.
+  // fully elapsed. The hour in progress is excluded: a service that has not
+  // been hit in the last few minutes is not dark.
   const currentHourStart = Math.floor(now / 3600) * 3600;
   const elapsedHours = Math.max(0, (currentHourStart - since) / 3600);
 
@@ -382,30 +384,28 @@ function calculateAvailability(d, network, service, since, now) {
 
   let activeHours = 0;
   let activeCompletedHours = 0;
-  let currentHourActive = false;
-  let score = 0;
+  let requests = 0;
+  let errors = 0;
   for (const hour of hours) {
     if (!hour.request_count) continue;
     activeHours++;
-    score += 1 - (hour.error_count || 0) / hour.request_count;
+    requests += hour.request_count;
+    errors += hour.error_count || 0;
     if (hour.h < currentHourStart) activeCompletedHours++;
-    else currentHourActive = true;
   }
 
   // Nothing recorded at all - say so rather than claiming a misleading 100%.
   if (activeHours === 0) {
-    return { uptime: "N/A", observedHours: elapsedHours, activeHours: 0, gapHours: 0 };
+    return { uptime: "N/A", observedHours: 0, activeHours: 0, gapHours: elapsedHours };
   }
 
-  // Every elapsed hour is scored, plus the hour in progress once it has
-  // traffic - so the score can never exceed the denominator.
-  const observedHours = elapsedHours + (currentHourActive ? 1 : 0);
-  // Elapsed hours that recorded nothing at all. Each one scores zero above.
+  // Elapsed hours we have no reading for. Not counted as downtime, but
+  // surfaced so the gap in coverage stays visible.
   const gapHours = Math.max(0, elapsedHours - activeCompletedHours);
 
   return {
-    uptime: ((score / Math.max(1, observedHours)) * 100).toFixed(2) + "%",
-    observedHours,
+    uptime: (((requests - errors) / requests) * 100).toFixed(2) + "%",
+    observedHours: activeHours,
     activeHours,
     gapHours,
   };
