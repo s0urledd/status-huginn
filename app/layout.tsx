@@ -21,8 +21,8 @@ export const metadata: Metadata = {
     'Live request metrics for Huginn Monad Mainnet & Testnet RPC, WebSocket, and Staking API endpoints.',
   icons: {
     icon: [
-      { url: '/icon.svg', type: 'image/svg+xml' },
-      { url: '/icon-dark-32x32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/icon-32x32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/icon-192x192.png', sizes: '192x192', type: 'image/png' },
     ],
     apple: '/apple-icon.png',
   },
